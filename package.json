@@ -1,0 +1,56 @@
+{
+  "name": "ytdlp-my",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "fix:electron": "rm -rf node_modules/electron && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ bun install --force",
+    "build": "electron-vite build",
+    "dist": "bun run build && electron-builder --publish never",
+    "dist:mac": "bun run build && electron-builder --mac dmg zip --publish never",
+    "publish": "electron-builder",
+    "publish:mac": "electron-builder --mac dmg zip",
+    "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.9",
+    "@nestjs/core": "^11.1.9",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "electron-builder": "^26.0.12",
+    "electron": "41.2.2",
+    "electron-vite": "^4.0.0",
+    "eslint": "^9.32.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vite": "^7.0.6"
+  },
+  "build": {
+    "appId": "com.alamonall.ytdlp-my",
+    "productName": "yt-dlp My",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  }
+}
