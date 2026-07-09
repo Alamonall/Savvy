@@ -20,6 +20,27 @@ type SettingsOption =
       placeholder?: string;
       min?: number;
       max?: number;
+    }
+  | {
+      key: keyof AppSettings;
+      kind: 'select';
+      label: string;
+      description: string;
+      original: string;
+      options: Array<{ label: string; value: string }>;
+    }
+  | {
+      id: string;
+      kind: 'exclusive';
+      label: string;
+      description: string;
+      original: string;
+      choices: Array<{
+        label: string;
+        value: string;
+        patch: Partial<AppSettings>;
+        isActive: (settings: AppSettings) => boolean;
+      }>;
     };
 type SettingsOptionGroup = {
   title: string;
@@ -168,19 +189,32 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
     options: [
       {
         key: 'format',
-        kind: 'text',
+        kind: 'select',
         label: 'Формат',
         description: 'Фильтр выбора качества и формата.',
         original: '-f, --format FORMAT',
-        placeholder: 'bv*+ba/b'
+        options: [
+          { label: 'По умолчанию yt-dlp', value: '' },
+          { label: 'Лучшее качество', value: 'best' },
+          { label: 'Лучшее видео + аудио', value: 'bestvideo+bestaudio/best' },
+          { label: 'Современный bestvideo/bestaudio', value: 'bv*+ba/b' },
+          { label: 'Только аудио', value: 'bestaudio/best' },
+          { label: 'Минимальный размер/качество', value: 'worst' }
+        ]
       },
       {
         key: 'formatSort',
-        kind: 'text',
+        kind: 'select',
         label: 'Сортировка форматов',
         description: 'Приоритеты выбора формата.',
         original: '-S, --format-sort SORTORDER',
-        placeholder: 'res,codec:av1'
+        options: [
+          { label: 'По умолчанию yt-dlp', value: '' },
+          { label: 'Разрешение, затем размер', value: 'res,filesize' },
+          { label: 'AV1 в приоритете', value: 'res,codec:av1' },
+          { label: 'H.264/совместимость', value: 'res,vcodec:h264' },
+          { label: 'Минимальный размер', value: 'filesize,res' }
+        ]
       },
       {
         key: 'playlistStart',
@@ -298,18 +332,31 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
     title: 'Файлы',
     options: [
       {
-        key: 'forceOverwrites',
-        kind: 'checkbox',
-        label: 'Перезаписывать файлы',
-        description: 'Перезаписывать уже существующие файлы.',
-        original: '--force-overwrites'
-      },
-      {
-        key: 'noOverwrites',
-        kind: 'checkbox',
-        label: 'Не перезаписывать файлы',
-        description: 'Не заменять существующие файлы.',
-        original: '--no-overwrites'
+        id: 'overwrite-mode',
+        kind: 'exclusive',
+        label: 'Поведение при существующих файлах',
+        description: 'Эти режимы взаимоисключающие: нельзя одновременно перезаписывать и запрещать перезапись.',
+        original: '--force-overwrites / --no-overwrites',
+        choices: [
+          {
+            label: 'По умолчанию yt-dlp',
+            value: 'default',
+            patch: { forceOverwrites: false, noOverwrites: false },
+            isActive: (appSettings) => !appSettings.forceOverwrites && !appSettings.noOverwrites
+          },
+          {
+            label: 'Перезаписывать файлы',
+            value: 'force',
+            patch: { forceOverwrites: true, noOverwrites: false },
+            isActive: (appSettings) => appSettings.forceOverwrites
+          },
+          {
+            label: 'Не перезаписывать файлы',
+            value: 'no-overwrite',
+            patch: { forceOverwrites: false, noOverwrites: true },
+            isActive: (appSettings) => appSettings.noOverwrites
+          }
+        ]
       },
       {
         key: 'continueDownload',
@@ -353,11 +400,20 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
       },
       {
         key: 'audioFormat',
-        kind: 'text',
+        kind: 'select',
         label: 'Формат аудио',
         description: 'Формат для извлеченного аудио.',
         original: '--audio-format FORMAT',
-        placeholder: 'mp3'
+        options: [
+          { label: 'best', value: 'best' },
+          { label: 'mp3', value: 'mp3' },
+          { label: 'm4a', value: 'm4a' },
+          { label: 'opus', value: 'opus' },
+          { label: 'vorbis', value: 'vorbis' },
+          { label: 'wav', value: 'wav' },
+          { label: 'flac', value: 'flac' },
+          { label: 'alac', value: 'alac' }
+        ]
       },
       {
         key: 'audioQuality',
@@ -369,27 +425,70 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
       },
       {
         key: 'mergeOutputFormat',
-        kind: 'text',
+        kind: 'select',
         label: 'Формат объединения',
         description: 'Контейнер для объединенного видео.',
         original: '--merge-output-format FORMAT',
-        placeholder: 'mp4'
+        options: [
+          { label: 'Не указывать', value: '' },
+          { label: 'mp4', value: 'mp4' },
+          { label: 'mkv', value: 'mkv' },
+          { label: 'webm', value: 'webm' },
+          { label: 'flv', value: 'flv' },
+          { label: 'avi', value: 'avi' },
+          { label: 'mov', value: 'mov' }
+        ]
       },
       {
-        key: 'remuxVideo',
-        kind: 'text',
-        label: 'Remux видео',
-        description: 'Перепаковать видео без перекодирования.',
-        original: '--remux-video FORMAT',
-        placeholder: 'mp4'
-      },
-      {
-        key: 'recodeVideo',
-        kind: 'text',
-        label: 'Перекодировать видео',
-        description: 'Перекодировать видео в формат.',
-        original: '--recode-video FORMAT',
-        placeholder: 'mp4'
+        id: 'video-conversion-mode',
+        kind: 'exclusive',
+        label: 'Перепаковка/перекодирование видео',
+        description: 'Remux и recode взаимоисключающие: remux меняет контейнер без перекодирования, recode перекодирует.',
+        original: '--remux-video / --recode-video',
+        choices: [
+          {
+            label: 'Не использовать',
+            value: 'none',
+            patch: { remuxVideo: '', recodeVideo: '' },
+            isActive: (appSettings) => !appSettings.remuxVideo && !appSettings.recodeVideo
+          },
+          {
+            label: 'Remux в mp4',
+            value: 'remux-mp4',
+            patch: { remuxVideo: 'mp4', recodeVideo: '' },
+            isActive: (appSettings) => appSettings.remuxVideo === 'mp4'
+          },
+          {
+            label: 'Remux в mkv',
+            value: 'remux-mkv',
+            patch: { remuxVideo: 'mkv', recodeVideo: '' },
+            isActive: (appSettings) => appSettings.remuxVideo === 'mkv'
+          },
+          {
+            label: 'Remux в webm',
+            value: 'remux-webm',
+            patch: { remuxVideo: 'webm', recodeVideo: '' },
+            isActive: (appSettings) => appSettings.remuxVideo === 'webm'
+          },
+          {
+            label: 'Recode в mp4',
+            value: 'recode-mp4',
+            patch: { remuxVideo: '', recodeVideo: 'mp4' },
+            isActive: (appSettings) => appSettings.recodeVideo === 'mp4'
+          },
+          {
+            label: 'Recode в mkv',
+            value: 'recode-mkv',
+            patch: { remuxVideo: '', recodeVideo: 'mkv' },
+            isActive: (appSettings) => appSettings.recodeVideo === 'mkv'
+          },
+          {
+            label: 'Recode в webm',
+            value: 'recode-webm',
+            patch: { remuxVideo: '', recodeVideo: 'webm' },
+            isActive: (appSettings) => appSettings.recodeVideo === 'webm'
+          }
+        ]
       },
       {
         key: 'ffmpegLocation',
@@ -450,11 +549,17 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
       },
       {
         key: 'convertSubtitles',
-        kind: 'text',
+        kind: 'select',
         label: 'Конвертировать субтитры',
         description: 'Формат, в который перевести субтитры.',
         original: '--convert-subs FORMAT',
-        placeholder: 'srt'
+        options: [
+          { label: 'Не конвертировать', value: '' },
+          { label: 'srt', value: 'srt' },
+          { label: 'vtt', value: 'vtt' },
+          { label: 'ass', value: 'ass' },
+          { label: 'lrc', value: 'lrc' }
+        ]
       },
       {
         key: 'embedSubtitles',
@@ -505,11 +610,20 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
       },
       {
         key: 'sponsorBlockMark',
-        kind: 'text',
+        kind: 'select',
         label: 'Помечать SponsorBlock',
         description: 'Добавить главы для указанных категорий.',
         original: '--sponsorblock-mark CATS',
-        placeholder: 'all'
+        options: [
+          { label: 'Не помечать', value: '' },
+          { label: 'Все категории', value: 'all' },
+          { label: 'Спонсор', value: 'sponsor' },
+          { label: 'Самореклама', value: 'selfpromo' },
+          { label: 'Взаимодействие', value: 'interaction' },
+          { label: 'Интро', value: 'intro' },
+          { label: 'Аутро', value: 'outro' },
+          { label: 'Музыкальный оффтоп', value: 'music_offtopic' }
+        ]
       },
       {
         key: 'splitChapters',
@@ -532,12 +646,49 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
     title: 'Аутентификация и extractors',
     options: [
       {
+        id: 'cookies-source',
+        kind: 'exclusive',
+        label: 'Источник cookies',
+        description: 'Выберите один способ передачи cookies.',
+        original: '--cookies-from-browser / --cookies',
+        choices: [
+          {
+            label: 'Не использовать cookies',
+            value: 'none',
+            patch: { cookiesFromBrowser: '', cookiesFile: '' },
+            isActive: (appSettings) => !appSettings.cookiesFromBrowser && !appSettings.cookiesFile
+          },
+          {
+            label: 'Из браузера',
+            value: 'browser',
+            patch: { cookiesFile: '' },
+            isActive: (appSettings) => Boolean(appSettings.cookiesFromBrowser)
+          },
+          {
+            label: 'Из файла',
+            value: 'file',
+            patch: { cookiesFromBrowser: '' },
+            isActive: (appSettings) => Boolean(appSettings.cookiesFile)
+          }
+        ]
+      },
+      {
         key: 'cookiesFromBrowser',
-        kind: 'text',
+        kind: 'select',
         label: 'Cookies из браузера',
         description: 'Загрузить cookies из профиля браузера.',
         original: '--cookies-from-browser BROWSER',
-        placeholder: 'chrome, firefox, safari'
+        options: [
+          { label: 'Не выбрано', value: '' },
+          { label: 'Chrome', value: 'chrome' },
+          { label: 'Chromium', value: 'chromium' },
+          { label: 'Firefox', value: 'firefox' },
+          { label: 'Safari', value: 'safari' },
+          { label: 'Edge', value: 'edge' },
+          { label: 'Brave', value: 'brave' },
+          { label: 'Opera', value: 'opera' },
+          { label: 'Vivaldi', value: 'vivaldi' }
+        ]
       },
       {
         key: 'cookiesFile',
@@ -584,11 +735,18 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
     options: [
       {
         key: 'externalDownloader',
-        kind: 'text',
+        kind: 'select',
         label: 'Внешний загрузчик',
         description: 'Использовать aria2c, curl, wget или другой загрузчик.',
         original: '--downloader NAME',
-        placeholder: 'aria2c'
+        options: [
+          { label: 'Встроенный загрузчик yt-dlp', value: '' },
+          { label: 'aria2c', value: 'aria2c' },
+          { label: 'curl', value: 'curl' },
+          { label: 'wget', value: 'wget' },
+          { label: 'httpie', value: 'httpie' },
+          { label: 'ffmpeg', value: 'ffmpeg' }
+        ]
       },
       {
         key: 'externalDownloaderArgs',
@@ -841,6 +999,24 @@ function renderTaskHint(task: DownloadTask): string {
     : '';
 }
 
+function renderTaskLog(task: DownloadTask): string {
+  const logText = task.log.length ? task.log.slice(-120).join('\n') : 'Лог пока пуст.';
+
+  return `
+    <pre class="task-log" aria-label="Лог задачи">${escapeHtml(
+      [
+        `Ссылка: ${task.url}`,
+        `Название: ${task.title || task.url}`,
+        `Папка: ${task.downloadDir}`,
+        `Аргументы: ${task.optionsText || 'без дополнительных аргументов'}`,
+        ...(task.userMessage ? ['', `Причина: ${task.userMessage}`] : []),
+        '',
+        logText
+      ].join('\n')
+    )}</pre>
+  `;
+}
+
 function isUrlInputActive(): boolean {
   return currentTab === 'queue' && document.activeElement?.id === 'url-input';
 }
@@ -995,7 +1171,37 @@ function renderOriginalTextButton(option: SettingsOption): string {
   return `<button class="eng-help" type="button" title="${escapeHtml(option.original)}" aria-label="Оригинальный текст опции">Eng</button>`;
 }
 
+function getExclusiveChoiceValue(option: Extract<SettingsOption, { kind: 'exclusive' }>): string {
+  return option.choices.find((choice) => choice.isActive(settings))?.value ?? option.choices[0].value;
+}
+
+function renderSelectOptions(
+  options: Array<{ label: string; value: string }>,
+  currentValue: string
+): string {
+  return options
+    .map(
+      (item) =>
+        `<option value="${escapeHtml(item.value)}" ${item.value === currentValue ? 'selected' : ''}>${escapeHtml(item.label)}</option>`
+    )
+    .join('');
+}
+
 function renderSettingsOption(option: SettingsOption): string {
+  if (option.kind === 'exclusive') {
+    return `
+      <div class="settings-option">
+        <div class="settings-option-copy">
+          <label class="settings-option-title" for="setting-exclusive-${option.id}">${escapeHtml(option.label)} ${renderOriginalTextButton(option)}</label>
+          <span class="settings-option-description">${escapeHtml(option.description)}</span>
+        </div>
+        <select id="setting-exclusive-${option.id}" data-setting-exclusive="${option.id}">
+          ${renderSelectOptions(option.choices, getExclusiveChoiceValue(option))}
+        </select>
+      </div>
+    `;
+  }
+
   const value = settings[option.key];
 
   if (option.kind === 'checkbox') {
@@ -1007,6 +1213,20 @@ function renderSettingsOption(option: SettingsOption): string {
           <span class="settings-option-description">${escapeHtml(option.description)}</span>
         </span>
       </label>
+    `;
+  }
+
+  if (option.kind === 'select') {
+    return `
+      <div class="settings-option">
+        <div class="settings-option-copy">
+          <label class="settings-option-title" for="setting-${String(option.key)}">${escapeHtml(option.label)} ${renderOriginalTextButton(option)}</label>
+          <span class="settings-option-description">${escapeHtml(option.description)}</span>
+        </div>
+        <select id="setting-${String(option.key)}" data-setting-input="${String(option.key)}">
+          ${renderSelectOptions(option.options, String(value ?? ''))}
+        </select>
+      </div>
     `;
   }
 
@@ -1354,8 +1574,10 @@ function renderUrlTaskGroupMarkup(
 }
 
 function renderTaskMarkup(task: DownloadTask, selectedTask: DownloadTask | null): string {
+  const isSelected = task.id === selectedTask?.id;
+
   return `
-    <div class="task ${task.id === selectedTask?.id ? 'selected' : ''}">
+    <div class="task ${isSelected ? 'selected' : ''}">
       <button class="task-main" data-task-id="${task.id}" type="button">
         <span class="task-body">
           <span class="task-title">${escapeHtml(task.title || task.url)}</span>
@@ -1373,9 +1595,11 @@ function renderTaskMarkup(task: DownloadTask, selectedTask: DownloadTask | null)
       <div class="task-actions">
         <button class="task-action" data-open-url="${task.id}" type="button">Ссылка</button>
         <button class="task-action" data-open-folder="${task.id}" type="button">Папка</button>
+        <button class="task-action" data-open-log="${task.id}" type="button">Лог</button>
         <button class="task-action" data-retry-task="${task.id}" type="button">Снова</button>
         <button class="task-action danger-action" data-remove-task="${task.id}" type="button">Удалить</button>
       </div>
+      ${isSelected ? renderTaskLog(task) : ''}
     </div>
   `;
 }
@@ -1575,7 +1799,7 @@ function bindSettingsEvents(): void {
     });
 
   document
-    .querySelectorAll<HTMLInputElement>('[data-setting-input]')
+    .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting-input]')
     .forEach((input) => {
       input.addEventListener('change', () => {
         const key = input.dataset.settingInput as keyof AppSettings | undefined;
@@ -1584,8 +1808,26 @@ function bindSettingsEvents(): void {
         }
 
         const value =
-          input.type === 'number' ? Math.floor(Number(input.value || '0')) : input.value;
+          input instanceof HTMLInputElement && input.type === 'number'
+            ? Math.floor(Number(input.value || '0'))
+            : input.value;
         void updateLocalSettings({ [key]: value } as Partial<AppSettings>);
+      });
+    });
+
+  document
+    .querySelectorAll<HTMLSelectElement>('[data-setting-exclusive]')
+    .forEach((select) => {
+      select.addEventListener('change', () => {
+        const option = SETTINGS_OPTION_GROUPS.flatMap((group) => group.options).find(
+          (item): item is Extract<SettingsOption, { kind: 'exclusive' }> =>
+            item.kind === 'exclusive' && item.id === select.dataset.settingExclusive
+        );
+        const choice = option?.choices.find((item) => item.value === select.value);
+
+        if (choice) {
+          void updateLocalSettings(choice.patch);
+        }
       });
     });
 
@@ -1682,6 +1924,13 @@ function bindQueueTaskEvents(): void {
       if (task) {
         void window.ytdlp.openFolder(task.downloadDir);
       }
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-open-log]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedTaskId = button.dataset.openLog ?? null;
+      render();
     });
   });
 

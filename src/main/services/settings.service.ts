@@ -40,7 +40,7 @@ export class SettingsService {
     const currentSettings = this.get();
     const maxConcurrentDownloads = Number(nextSettings.maxConcurrentDownloads);
 
-    this.settings = {
+    const normalizedSettings: AppSettings = {
       ...currentSettings,
       ...nextSettings,
       inheritedConfigPaths: currentSettings.inheritedConfigPaths,
@@ -49,6 +49,20 @@ export class SettingsService {
         ? Math.max(1, Math.min(8, Math.floor(maxConcurrentDownloads)))
         : currentSettings.maxConcurrentDownloads
     };
+
+    if (normalizedSettings.forceOverwrites && normalizedSettings.noOverwrites) {
+      normalizedSettings.noOverwrites = false;
+    }
+
+    if (normalizedSettings.cookiesFromBrowser.trim() && normalizedSettings.cookiesFile.trim()) {
+      normalizedSettings.cookiesFile = '';
+    }
+
+    if (normalizedSettings.remuxVideo.trim() && normalizedSettings.recodeVideo.trim()) {
+      normalizedSettings.recodeVideo = '';
+    }
+
+    this.settings = normalizedSettings;
 
     this.persistSettings();
 
@@ -441,7 +455,7 @@ export class SettingsService {
     }
 
     if (appSettings.additionalOptions.trim()) {
-      args.push(appSettings.additionalOptions.trim());
+      args.push(...this.parseOptions(appSettings.additionalOptions));
     }
 
     return args;

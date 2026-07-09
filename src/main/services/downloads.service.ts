@@ -20,6 +20,8 @@ const MAX_HTTP_403_AUTO_RETRIES = 2;
 const HTTP_403_RETRY_DELAY_MS = 2000;
 const YOUTUBE_JS_RUNTIME_MESSAGE =
   'YouTube не отдал видеоформаты: yt-dlp не смог решить n challenge. Добавь в дополнительные аргументы "--js-runtimes deno" или обнови yt-dlp/JS runtime.';
+const X_TIMEOUT_MESSAGE =
+  'Не удалось подключиться к x.com: соединение истекло по таймауту. Для Twitter/X проверь доступ к сайту из этой сети, укажи Proxy/VPN в настройках сети, при необходимости увеличь "Таймаут сокета" и используй cookies из браузера.';
 
 @Injectable()
 export class DownloadsService {
@@ -339,6 +341,13 @@ export class DownloadsService {
       };
     }
 
+    if (this.isXConnectionTimeout(logText)) {
+      return {
+        isRetryable: false,
+        userMessage: X_TIMEOUT_MESSAGE
+      };
+    }
+
     return {
       isRetryable: false,
       userMessage: null
@@ -374,11 +383,19 @@ export class DownloadsService {
       ) {
         task.userMessage = YOUTUBE_JS_RUNTIME_MESSAGE;
       }
+
+      if (this.isXConnectionTimeout(line)) {
+        task.userMessage = X_TIMEOUT_MESSAGE;
+      }
     }
 
     task.log.push(...lines);
     task.log = task.log.slice(-300);
     this.scheduleQueueUpdate(task);
+  }
+
+  private isXConnectionTimeout(text: string): boolean {
+    return /\[twitter]\s+\d+:/i.test(text) && /Connection to x\.com timed out/i.test(text);
   }
 
   private cloneTask(task: DownloadTask): DownloadTask {

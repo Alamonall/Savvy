@@ -719,6 +719,7 @@ label.settings-option {
 
 .task-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -781,6 +782,21 @@ label.settings-option {
   color: #b42318;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.task-log {
+  grid-column: 1 / -1;
+  max-height: 260px;
+  margin: 2px 0 0;
+  overflow: auto;
+  border-radius: 6px;
+  background: #0f1720;
+  color: #d6e0ea;
+  padding: 12px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .progress-track {
