@@ -138,9 +138,40 @@ h2 {
 
 .add-form {
   display: grid;
-  grid-template-columns: 1fr 132px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.6fr) 132px;
   gap: 10px;
   padding: 14px;
+}
+
+.download-folder-context {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid #c9d1d9;
+  border-radius: 6px;
+}
+
+.download-folder-label {
+  color: #667085;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.download-folder-value {
+  min-width: 0;
+  overflow: hidden;
+  color: #344054;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-folder-context .ghost {
+  min-height: 30px;
+  padding: 0 8px;
 }
 
 input,

@@ -20,6 +20,7 @@ export interface DownloadTask {
 export interface AddDownloadPayload {
   url: string;
   optionsText: string;
+  downloadDir: string;
 }
 
 export interface AppSettings {

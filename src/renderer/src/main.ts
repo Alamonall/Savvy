@@ -847,7 +847,7 @@ function installBrowserPreviewApi(): void {
         url: payload.url,
         title: payload.url,
         optionsText: payload.optionsText,
-        downloadDir: previewSettings.downloadDir || 'Browser preview',
+        downloadDir: payload.downloadDir.trim() || previewSettings.downloadDir || 'Browser preview',
         status: 'running',
         createdAt: now,
         startedAt: now,
@@ -1746,6 +1746,11 @@ function render(): void {
             <section class="panel">
               <form class="add-form" id="add-form">
                 <input id="url-input" type="url" value="${escapeHtml(urlDraft)}" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" required />
+                <div class="download-folder-context">
+                  <span class="download-folder-label">Папка скачивания</span>
+                  <span class="download-folder-value" title="${escapeHtml(settings.downloadDir || 'Папка не выбрана')}">${escapeHtml(settings.downloadDir || 'Папка не выбрана')}</span>
+                  <button class="ghost bordered" id="choose-download-folder" type="button">Выбрать</button>
+                </div>
                 <button class="primary" type="submit">Добавить</button>
               </form>
             </section>
@@ -2002,6 +2007,10 @@ function bindQueueStaticEvents(): void {
     event.preventDefault();
     void addDownload();
   });
+
+  document.querySelector<HTMLButtonElement>('#choose-download-folder')?.addEventListener('click', () => {
+    void chooseDownloadFolder();
+  });
 }
 
 function bindEvents(): void {
@@ -2041,6 +2050,17 @@ async function chooseSettingPath(key: keyof AppSettings): Promise<void> {
   }
 
   await updateLocalSettings({ [key]: selectedPath } as Partial<AppSettings>);
+  render();
+}
+
+async function chooseDownloadFolder(): Promise<void> {
+  const selectedPath = await window.ytdlp.chooseDownloadDirectory(settings.downloadDir);
+
+  if (!selectedPath) {
+    return;
+  }
+
+  await updateLocalSettings({ downloadDir: selectedPath });
   render();
 }
 
@@ -2158,7 +2178,8 @@ async function addDownload(): Promise<void> {
     await window.ytdlp.updateSettings(settings);
     const task = await window.ytdlp.addDownload({
       url,
-      optionsText: ''
+      optionsText: '',
+      downloadDir: settings.downloadDir
     });
 
     selectedTaskId = task.id;

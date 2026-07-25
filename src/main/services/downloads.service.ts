@@ -89,7 +89,7 @@ export class DownloadsService {
       url,
       title: url,
       optionsText: this.settingsService.buildTaskOptionsText(payload.optionsText),
-      downloadDir: this.settingsService.get().downloadDir,
+      downloadDir: payload.downloadDir.trim() || this.settingsService.get().downloadDir,
       status: 'queued',
       createdAt: Date.now(),
       autoRetryAttempt: 0,
