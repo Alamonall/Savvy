@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -10,7 +11,7 @@ import { ElectronShellService } from './services/electron-shell.service';
 import { SettingsService } from './services/settings.service';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain } = require('electron') as typeof import('electron');
+const { app, BrowserWindow, Notification, ipcMain } = require('electron') as typeof import('electron');
 
 type RuntimeServices = {
   downloads: DownloadsService;
@@ -38,6 +39,10 @@ export class ElectronApplication {
     this.services.downloads.loadHistory();
     this.services.downloads.setUpdateSender((update) => {
       this.mainWindow?.webContents.send('downloads:update', update);
+
+      if (update.task.status === 'done') {
+        this.showDownloadDoneNotification(update.task.title || update.task.url);
+      }
     });
 
     this.registerIpcHandlers();
@@ -72,6 +77,7 @@ export class ElectronApplication {
       minWidth: 760,
       minHeight: 560,
       title: 'yt-dlp My',
+      icon: this.getAppIconPath(),
       backgroundColor: '#f6f7f9',
       webPreferences: {
         preload: join(__dirname, '../preload/index.mjs'),
@@ -102,6 +108,27 @@ export class ElectronApplication {
     } else {
       void this.mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
     }
+  }
+
+  private getAppIconPath(): string | undefined {
+    const candidates = [
+      join(app.getAppPath(), 'src/renderer/public/media-download.svg'),
+      join(__dirname, '../renderer/media-download.svg')
+    ];
+
+    return candidates.find((iconPath) => existsSync(iconPath));
+  }
+
+  private showDownloadDoneNotification(title: string): void {
+    if (!Notification.isSupported()) {
+      return;
+    }
+
+    new Notification({
+      title: 'Видео скачалось',
+      body: title,
+      icon: this.getAppIconPath()
+    }).show();
   }
 
   private registerIpcHandlers(): void {

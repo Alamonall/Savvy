@@ -7,6 +7,10 @@
   },
   "homepage": "https://github.com/Alamonall/ytdlp-my",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Alamonall/ytdlp-my.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
@@ -53,6 +57,7 @@
   "build": {
     "appId": "com.alamonall.ytdlp-my",
     "productName": "yt-dlp My",
+    "artifactName": "${name}-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -67,6 +72,15 @@
         "zip"
       ]
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Alamonall",
+        "repo": "ytdlp-my",
+        "channel": "nightly",
+        "releaseType": "prerelease"
+      }
+    ],
     "linux": {
       "maintainer": "Alamonall <alamonall@users.noreply.github.com>"
     }
