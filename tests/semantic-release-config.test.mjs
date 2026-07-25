@@ -20,6 +20,13 @@ test('release workflow runs on the default branch and has release permissions', 
   assert.match(workflow, /semantic-release/);
 });
 
+test('release workflow uploads only distributable installer files', () => {
+  assert.match(workflow, /artifact-path: dist\/\*\.\{AppImage,deb\}/);
+  assert.match(workflow, /artifact-path: dist\/\*\.\{dmg,zip\}/);
+  assert.match(workflow, /artifact-path: dist\/\*\.\{exe,blockmap\}/);
+  assert.doesNotMatch(workflow, /\n\s+path: dist\/\*/);
+});
+
 test('semantic release publishes every merge and attaches installer artifacts', () => {
   assert.deepEqual(releaseConfig.branches, ['main', 'master']);
   assert.match(JSON.stringify(releaseConfig.plugins), /@semantic-release\/github/);
