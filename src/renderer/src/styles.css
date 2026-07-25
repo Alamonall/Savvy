@@ -1167,3 +1167,102 @@ label.settings-option {
     grid-template-columns: 1fr;
   }
 }
+
+[data-theme='dark'] {
+  color: #e5e7eb;
+  background: #111827;
+}
+
+[data-theme='dark'] body {
+  background: #111827;
+}
+
+[data-theme='dark'] .panel,
+[data-theme='dark'] .tabs,
+[data-theme='dark'] input,
+[data-theme='dark'] select,
+[data-theme='dark'] textarea,
+[data-theme='dark'] .eng-help,
+[data-theme='dark'] .text-link {
+  border-color: #374151;
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .topbar p,
+[data-theme='dark'] .hint,
+[data-theme='dark'] .empty,
+[data-theme='dark'] .section-head span,
+[data-theme='dark'] .queue-meta,
+[data-theme='dark'] .settings-option-description,
+[data-theme='dark'] .config-versions li,
+[data-theme='dark'] .task-day-arrow,
+[data-theme='dark'] .task-day-hide-completed {
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .tab,
+[data-theme='dark'] .ghost,
+[data-theme='dark'] .settings-mode-tab,
+[data-theme='dark'] .settings-option-title,
+[data-theme='dark'] .field label,
+[data-theme='dark'] .check-row,
+[data-theme='dark'] .task-day-toggle {
+  color: #d1d5db;
+}
+
+[data-theme='dark'] .tab.active,
+[data-theme='dark'] .ghost:hover,
+[data-theme='dark'] .settings-mode-tab.active,
+[data-theme='dark'] .settings-mode-tab:hover,
+[data-theme='dark'] .eng-help:hover,
+[data-theme='dark'] .text-link:hover {
+  background: #374151;
+  color: #ffffff;
+}
+
+[data-theme='dark'] .ghost.bordered {
+  border-color: #4b5563;
+}
+
+[data-theme='dark'] .section-head,
+[data-theme='dark'] .queue-meta,
+[data-theme='dark'] .settings-option {
+  border-color: #374151;
+}
+
+[data-theme='dark'] .inherited-box,
+[data-theme='dark'] .options-preview {
+  background: #111827;
+  color: #d1d5db;
+}
+
+[data-theme='dark'] .task-day-header {
+  border-color: #374151;
+  background: #1f2937;
+}
+
+[data-theme='dark'] .task-day-header:hover {
+  background: #374151;
+}
+
+[data-theme='dark'] .task-url-group-count {
+  background: #374151;
+  color: #d1d5db;
+}
+
+[data-theme='dark'] .runtime-notice {
+  border-color: #92400e;
+  background: #451a03;
+  color: #fde68a;
+}
+
+[data-theme='dark'] .danger {
+  border-color: #991b1b;
+  background: #450a0a;
+  color: #fecaca;
+}
+
+[data-theme='dark'] .danger:hover {
+  background: #7f1d1d;
+}

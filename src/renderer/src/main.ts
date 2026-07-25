@@ -64,6 +64,9 @@ type FolderPickerState = {
 const COLLAPSED_DAYS_KEY = 'ytdlp-collapsed-days';
 const EXPANDED_URL_GROUPS_KEY = 'ytdlp-expanded-url-groups';
 const CONFIG_VERSIONS_KEY = 'ytdlp-config-versions';
+const THEME_KEY = 'ytdlp-theme';
+
+type Theme = 'light' | 'dark';
 
 let currentTab: Tab = 'queue';
 let settingsMode: SettingsMode = 'ui';
@@ -83,6 +86,7 @@ let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
 let collapsedDays = readCollapsedDays();
 let expandedUrlGroups = readExpandedUrlGroups();
 let folderPicker: FolderPickerState | null = null;
+let theme: Theme = readTheme();
 let settings: AppSettings = {
   downloadDir: '',
   maxConcurrentDownloads: 1,
@@ -1722,6 +1726,22 @@ function refreshViewAfterQueueUpdate(): void {
   }
 }
 
+function readTheme(): Theme {
+  return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+}
+
+function applyTheme(): void {
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+}
+
+function toggleTheme(): void {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, theme);
+  applyTheme();
+  render();
+}
+
 function render(): void {
   const visibleQueue = getVisibleQueue();
   const selectedTask =
@@ -1735,6 +1755,7 @@ function render(): void {
           <p>Очередь скачивания через локально установленный yt-dlp</p>
         </div>
         <div class="topbar-actions">
+          <button class="ghost bordered theme-toggle" data-toggle-theme type="button" title="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}" aria-label="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}">${theme === 'dark' ? '☀' : '☾'}</button>
           <nav class="tabs" aria-label="Разделы">
             <button class="tab ${currentTab === 'queue' ? 'active' : ''}" data-tab="queue">Скачивание</button>
             <button class="tab settings-tab ${currentTab === 'settings' ? 'active' : ''}" data-tab="settings" title="Настройки" aria-label="Настройки">⚙</button>
@@ -2026,6 +2047,12 @@ function bindQueueStaticEvents(): void {
 }
 
 function bindEvents(): void {
+  document
+    .querySelector<HTMLButtonElement>('[data-toggle-theme]')
+    ?.addEventListener('click', () => {
+      toggleTheme();
+    });
+
   document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((button) => {
     button.addEventListener('click', () => {
       currentTab = button.dataset.tab as Tab;
@@ -2472,6 +2499,7 @@ window.ytdlp.onQueueUpdate((update) => {
   refreshViewAfterQueueUpdate();
 });
 
+applyTheme();
 render();
 
 async function initializeApp(): Promise<void> {
