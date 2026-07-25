@@ -1754,9 +1754,12 @@ function render(): void {
   appRoot.innerHTML = `
     <main class="shell">
       <header class="topbar">
-        <div>
-          <h1>Savvy</h1>
-          <p>Очередь скачивания через локально установленный yt-dlp</p>
+        <div class="app-brand">
+          <img class="app-brand-icon" src="/savvy.png" alt="" />
+          <div>
+            <h1>Savvy</h1>
+            <p>Очередь скачивания через локально установленный yt-dlp</p>
+          </div>
         </div>
         <div class="topbar-actions">
           <button class="ghost bordered theme-toggle" data-toggle-theme type="button" title="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}" aria-label="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}">${theme === 'dark' ? '☀' : '☾'}</button>

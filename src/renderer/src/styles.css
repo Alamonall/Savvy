@@ -52,6 +52,22 @@ button {
   gap: 24px;
 }
 
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-brand-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.2);
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;

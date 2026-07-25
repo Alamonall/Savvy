@@ -70,6 +70,7 @@
     ],
     "asar": true,
     "mac": {
+      "icon": "src/renderer/public/savvy.icns",
       "target": [
         "dmg",
         "zip"
@@ -85,7 +86,11 @@
       }
     ],
     "linux": {
+      "icon": "src/renderer/public/savvy.png",
       "maintainer": "Alamonall <alamonall@users.noreply.github.com>"
+    },
+    "win": {
+      "icon": "src/renderer/public/savvy.ico"
     }
   }
 }
