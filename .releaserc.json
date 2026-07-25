@@ -1,5 +1,5 @@
 {
-  "branches": [{ "name": "master", "prerelease": "alpha" }],
+  "branches": ["master"],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -7,6 +7,7 @@
         "preset": "conventionalcommits",
         "releaseRules": [
           { "release": "patch" },
+          { "type": "ci", "release": false },
           { "type": "feat", "release": "minor" },
           { "breaking": true, "release": "major" }
         ]
