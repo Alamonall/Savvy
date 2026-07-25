@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
@@ -10,20 +11,46 @@ import { ElectronShellService } from './services/electron-shell.service';
 import { SettingsService } from './services/settings.service';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain } = require('electron') as typeof import('electron');
+const { app, BrowserWindow, Notification, ipcMain } = require('electron') as typeof import('electron');
 
 let mainWindow: BrowserWindowType | null = null;
 let downloadsService: DownloadsService;
 let settingsService: SettingsService;
 let shellService: ElectronShellService;
 
+function getAppIconPath(): string | undefined {
+  const candidates = [
+    join(app.getAppPath(), 'src/renderer/public/media-download.svg'),
+    join(__dirname, '../renderer/media-download.svg')
+  ];
+
+  return candidates.find((iconPath) => existsSync(iconPath));
+}
+
+function showDownloadDoneNotification(title: string): void {
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const icon = getAppIconPath();
+
+  new Notification({
+    title: 'Видео скачалось',
+    body: title,
+    icon
+  }).show();
+}
+
 function createWindow(): void {
+  const icon = getAppIconPath();
+
   mainWindow = new BrowserWindow({
     width: 980,
     height: 720,
     minWidth: 760,
     minHeight: 560,
     title: 'yt-dlp My',
+    icon,
     backgroundColor: '#f6f7f9',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -104,6 +131,10 @@ app.whenReady().then(async () => {
   downloadsService.loadHistory();
   downloadsService.setUpdateSender((update) => {
     mainWindow?.webContents.send('downloads:update', update);
+
+    if (update.task.status === 'done') {
+      showDownloadDoneNotification(update.task.title || update.task.url);
+    }
   });
 
   registerIpcHandlers();

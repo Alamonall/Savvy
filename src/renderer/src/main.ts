@@ -2195,12 +2195,6 @@ async function removeDownload(taskId: string): Promise<void> {
 }
 
 window.ytdlp.onQueueUpdate((update) => {
-  if (isUrlInputActive()) {
-    pendingQueue = update.queue;
-    pendingSelectedTaskId = update.task.id;
-    return;
-  }
-
   queue = update.queue;
   selectedTaskId = update.task.id;
   refreshViewAfterQueueUpdate();
