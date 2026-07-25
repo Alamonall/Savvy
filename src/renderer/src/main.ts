@@ -55,6 +55,9 @@ type ConfigVersion = {
 const COLLAPSED_DAYS_KEY = 'ytdlp-collapsed-days';
 const EXPANDED_URL_GROUPS_KEY = 'ytdlp-expanded-url-groups';
 const CONFIG_VERSIONS_KEY = 'ytdlp-config-versions';
+const THEME_KEY = 'ytdlp-theme';
+
+type Theme = 'light' | 'dark';
 
 let currentTab: Tab = 'queue';
 let settingsMode: SettingsMode = 'ui';
@@ -73,6 +76,7 @@ let textConfigDraft: string | null = null;
 let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
 let collapsedDays = readCollapsedDays();
 let expandedUrlGroups = readExpandedUrlGroups();
+let theme: Theme = readTheme();
 let settings: AppSettings = {
   downloadDir: '',
   maxConcurrentDownloads: 1,
@@ -335,7 +339,8 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
         id: 'overwrite-mode',
         kind: 'exclusive',
         label: 'Поведение при существующих файлах',
-        description: 'Эти режимы взаимоисключающие: нельзя одновременно перезаписывать и запрещать перезапись.',
+        description:
+          'Эти режимы взаимоисключающие: нельзя одновременно перезаписывать и запрещать перезапись.',
         original: '--force-overwrites / --no-overwrites',
         choices: [
           {
@@ -443,7 +448,8 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
         id: 'video-conversion-mode',
         kind: 'exclusive',
         label: 'Перепаковка/перекодирование видео',
-        description: 'Remux и recode взаимоисключающие: remux меняет контейнер без перекодирования, recode перекодирует.',
+        description:
+          'Remux и recode взаимоисключающие: remux меняет контейнер без перекодирования, recode перекодирует.',
         original: '--remux-video / --recode-video',
         choices: [
           {
@@ -802,7 +808,9 @@ function buildEffectiveOptionsPreview(nextSettings: AppSettings): string {
     nextSettings.sponsorBlock ? '--sponsorblock-remove all' : '',
     nextSettings.outputTemplate ? `--output "${nextSettings.outputTemplate}"` : '',
     nextSettings.rateLimit ? `--limit-rate ${nextSettings.rateLimit}` : '',
-    nextSettings.cookiesFromBrowser ? `--cookies-from-browser ${nextSettings.cookiesFromBrowser}` : '',
+    nextSettings.cookiesFromBrowser
+      ? `--cookies-from-browser ${nextSettings.cookiesFromBrowser}`
+      : '',
     nextSettings.inlineConfigText.trim(),
     nextSettings.additionalOptions.trim()
   ].filter(Boolean);
@@ -909,7 +917,9 @@ function installBrowserPreviewApi(): void {
     async importConfigFileByPath(filePath) {
       previewSettings = {
         ...previewSettings,
-        inlineConfigText: filePath ? `# Preview import from ${filePath}` : previewSettings.inlineConfigText
+        inlineConfigText: filePath
+          ? `# Preview import from ${filePath}`
+          : previewSettings.inlineConfigText
       };
       return previewSettings;
     },
@@ -994,9 +1004,7 @@ function formatProgress(task: DownloadTask): string {
 }
 
 function renderTaskHint(task: DownloadTask): string {
-  return task.userMessage
-    ? `<span class="task-hint">${escapeHtml(task.userMessage)}</span>`
-    : '';
+  return task.userMessage ? `<span class="task-hint">${escapeHtml(task.userMessage)}</span>` : '';
 }
 
 function renderTaskLog(task: DownloadTask): string {
@@ -1172,7 +1180,9 @@ function renderOriginalTextButton(option: SettingsOption): string {
 }
 
 function getExclusiveChoiceValue(option: Extract<SettingsOption, { kind: 'exclusive' }>): string {
-  return option.choices.find((choice) => choice.isActive(settings))?.value ?? option.choices[0].value;
+  return (
+    option.choices.find((choice) => choice.isActive(settings))?.value ?? option.choices[0].value
+  );
 }
 
 function renderSelectOptions(
@@ -1521,7 +1531,8 @@ function getUrlGroupProgress(tasks: DownloadTask[]): string {
     return '—';
   }
 
-  const progress = progressValues.reduce((total, value) => total + value, 0) / progressValues.length;
+  const progress =
+    progressValues.reduce((total, value) => total + value, 0) / progressValues.length;
   return `${progress.toFixed(1)}%`;
 }
 
@@ -1604,10 +1615,7 @@ function renderTaskMarkup(task: DownloadTask, selectedTask: DownloadTask | null)
   `;
 }
 
-function renderTaskListMarkup(
-  tasks: DownloadTask[],
-  selectedTask: DownloadTask | null
-): string {
+function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask | null): string {
   if (!tasks.length) {
     return '<p class="empty">Нет задач для отображения.</p>';
   }
@@ -1703,6 +1711,22 @@ function refreshViewAfterQueueUpdate(): void {
   }
 }
 
+function readTheme(): Theme {
+  return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
+}
+
+function applyTheme(): void {
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+}
+
+function toggleTheme(): void {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_KEY, theme);
+  applyTheme();
+  render();
+}
+
 function render(): void {
   const visibleQueue = getVisibleQueue();
   const selectedTask =
@@ -1716,6 +1740,7 @@ function render(): void {
           <p>Очередь скачивания через локально установленный yt-dlp</p>
         </div>
         <div class="topbar-actions">
+          <button class="ghost bordered theme-toggle" data-toggle-theme type="button" title="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}" aria-label="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}">${theme === 'dark' ? '☀' : '☾'}</button>
           <nav class="tabs" aria-label="Разделы">
             <button class="tab ${currentTab === 'queue' ? 'active' : ''}" data-tab="queue">Скачивание</button>
             <button class="tab settings-tab ${currentTab === 'settings' ? 'active' : ''}" data-tab="settings" title="Настройки" aria-label="Настройки">⚙</button>
@@ -1777,26 +1802,22 @@ function render(): void {
 }
 
 function bindSettingsEvents(): void {
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-settings-mode]')
-    .forEach((button) => {
-      button.addEventListener('click', () => {
-        settingsMode = button.dataset.settingsMode as SettingsMode;
-        textConfigDraft = null;
-        render();
-      });
+  document.querySelectorAll<HTMLButtonElement>('[data-settings-mode]').forEach((button) => {
+    button.addEventListener('click', () => {
+      settingsMode = button.dataset.settingsMode as SettingsMode;
+      textConfigDraft = null;
+      render();
     });
+  });
 
-  document
-    .querySelectorAll<HTMLInputElement>('[data-setting-checkbox]')
-    .forEach((checkbox) => {
-      checkbox.addEventListener('change', () => {
-        const key = checkbox.dataset.settingCheckbox as keyof AppSettings | undefined;
-        if (key) {
-          void updateLocalSettings({ [key]: checkbox.checked } as Partial<AppSettings>);
-        }
-      });
+  document.querySelectorAll<HTMLInputElement>('[data-setting-checkbox]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      const key = checkbox.dataset.settingCheckbox as keyof AppSettings | undefined;
+      if (key) {
+        void updateLocalSettings({ [key]: checkbox.checked } as Partial<AppSettings>);
+      }
     });
+  });
 
   document
     .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting-input]')
@@ -1815,37 +1836,36 @@ function bindSettingsEvents(): void {
       });
     });
 
-  document
-    .querySelectorAll<HTMLSelectElement>('[data-setting-exclusive]')
-    .forEach((select) => {
-      select.addEventListener('change', () => {
-        const option = SETTINGS_OPTION_GROUPS.flatMap((group) => group.options).find(
-          (item): item is Extract<SettingsOption, { kind: 'exclusive' }> =>
-            item.kind === 'exclusive' && item.id === select.dataset.settingExclusive
-        );
-        const choice = option?.choices.find((item) => item.value === select.value);
+  document.querySelectorAll<HTMLSelectElement>('[data-setting-exclusive]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const option = SETTINGS_OPTION_GROUPS.flatMap((group) => group.options).find(
+        (item): item is Extract<SettingsOption, { kind: 'exclusive' }> =>
+          item.kind === 'exclusive' && item.id === select.dataset.settingExclusive
+      );
+      const choice = option?.choices.find((item) => item.value === select.value);
 
-        if (choice) {
-          void updateLocalSettings(choice.patch);
-        }
-      });
+      if (choice) {
+        void updateLocalSettings(choice.patch);
+      }
     });
-
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-choose-setting-path]')
-    .forEach((button) => {
-      button.addEventListener('click', () => {
-        const key = button.dataset.chooseSettingPath as keyof AppSettings | undefined;
-        if (key) {
-          void chooseSettingPath(key);
-        }
-      });
-    });
-
-  document.querySelector<HTMLTextAreaElement>('#text-config-input')?.addEventListener('input', () => {
-    textConfigDraft = document.querySelector<HTMLTextAreaElement>('#text-config-input')?.value ?? '';
-    refreshTextConfigState();
   });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-choose-setting-path]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.dataset.chooseSettingPath as keyof AppSettings | undefined;
+      if (key) {
+        void chooseSettingPath(key);
+      }
+    });
+  });
+
+  document
+    .querySelector<HTMLTextAreaElement>('#text-config-input')
+    ?.addEventListener('input', () => {
+      textConfigDraft =
+        document.querySelector<HTMLTextAreaElement>('#text-config-input')?.value ?? '';
+      refreshTextConfigState();
+    });
 
   document.querySelector<HTMLButtonElement>('#save-text-config')?.addEventListener('click', () => {
     void saveTextConfig();
@@ -1858,7 +1878,9 @@ function bindSettingsEvents(): void {
 
   document.querySelectorAll<HTMLButtonElement>('[data-load-config-version]').forEach((button) => {
     button.addEventListener('click', () => {
-      const version = readConfigVersions().find((item) => item.id === button.dataset.loadConfigVersion);
+      const version = readConfigVersions().find(
+        (item) => item.id === button.dataset.loadConfigVersion
+      );
       if (!version) {
         return;
       }
@@ -2005,6 +2027,12 @@ function bindQueueStaticEvents(): void {
 }
 
 function bindEvents(): void {
+  document
+    .querySelector<HTMLButtonElement>('[data-toggle-theme]')
+    ?.addEventListener('click', () => {
+      toggleTheme();
+    });
+
   document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((button) => {
     button.addEventListener('click', () => {
       currentTab = button.dataset.tab as Tab;
@@ -2127,7 +2155,9 @@ function buildTextModeSettings(text: string): Partial<AppSettings> {
 
 async function saveTextConfig(): Promise<void> {
   const text = (
-    textConfigDraft ?? document.querySelector<HTMLTextAreaElement>('#text-config-input')?.value ?? ''
+    textConfigDraft ??
+    document.querySelector<HTMLTextAreaElement>('#text-config-input')?.value ??
+    ''
   ).trim();
 
   saveConfigVersion(text);
@@ -2206,6 +2236,7 @@ window.ytdlp.onQueueUpdate((update) => {
   refreshViewAfterQueueUpdate();
 });
 
+applyTheme();
 render();
 
 async function initializeApp(): Promise<void> {

@@ -2,6 +2,9 @@
   "name": "ytdlp-my",
   "version": "0.2.0",
   "private": true,
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "homepage": "https://github.com/Alamonall/ytdlp-my",
   "type": "module",
   "main": "out/main/index.js",
@@ -17,9 +20,12 @@
     "publish:mac": "electron-builder --mac dmg zip",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "quality:check": "npm run format:check && npm run lint && npm run typecheck",
     "release": "semantic-release"
   },
   "dependencies": {
