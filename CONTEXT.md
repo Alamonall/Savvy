@@ -32,11 +32,11 @@ src/
   shared/types.ts                    общие типы задач, настроек и preload API
 ```
 
-Корневые конфигурации: `package.json`, `electron.vite.config.ts`, `tsconfig.json`, `eslint.config.js`, `.prettierrc`, `.gitignore`. README и отдельные тесты в текущей рабочей копии отсутствуют.
+Корневые конфигурации: `package.json`, `electron.vite.config.ts`, `tsconfig.json`, `eslint.config.js`, `.prettierrc`, `.gitignore`. Документация проекта находится в `README.md`, проверки конфигурации и стандартов — в `tests/`.
 
 ## Архитектура и поток выполнения
 
-1. `src/main/index.ts` после `app.whenReady()` создаёт NestJS application context из `AppModule`, получает сервисы, загружает настройки и историю, регистрирует IPC handlers и создаёт `BrowserWindow`.
+1. `src/main/index.ts` после `app.whenReady()` создаёт `ElectronApplication`, который поднимает NestJS application context из `AppModule`, получает сервисы, загружает настройки и историю, регистрирует IPC handlers и создаёт `BrowserWindow`.
 2. Окно работает с `contextIsolation: true` и `nodeIntegration: false`; preload подключает `contextBridge` и экспортирует `window.ytdlp`.
 3. Renderer (`src/renderer/src/main.ts`) хранит UI-состояние, рендерит DOM-шаблоны и вызывает `window.ytdlp`. Обновления очереди идут обратно через событие `downloads:update`.
 4. `DownloadsService` запускает найденный бинарник через `spawn(..., { shell: false })`, читает stdout/stderr, извлекает прогресс и имя результата, ограничивает журнал последними 300 строками и сохраняет очередь.
@@ -46,22 +46,22 @@ src/
 
 Каналы регистрируются в `src/main/index.ts` и типизированы через `YtdlpApi` в `src/shared/types.ts`.
 
-| Канал | Назначение |
-| --- | --- |
-| `downloads:add` | добавить URL в очередь |
-| `downloads:retry` | создать новую задачу с актуальными настройками |
-| `downloads:remove` | удалить неактивную задачу |
-| `downloads:list` | получить очередь |
-| `downloads:clear-history` | удалить завершённые и неактивные задачи |
-| `downloads:update` | main → renderer: задача и снимок очереди |
-| `settings:get` | получить настройки |
-| `settings:update` | нормализовать и сохранить настройки |
-| `settings:get-effective-options-preview` | получить итоговые аргументы перед URL |
-| `settings:choose-download-directory` | выбрать папку через Electron dialog |
-| `settings:import-config-file` | выбрать и импортировать config-файл |
-| `settings:import-config-file-by-path` | импортировать config по указанному пути |
-| `shell:open-url` | открыть только `http`/`https` URL |
-| `shell:open-folder` | открыть папку через системный shell |
+| Канал                                    | Назначение                                     |
+| ---------------------------------------- | ---------------------------------------------- |
+| `downloads:add`                          | добавить URL в очередь                         |
+| `downloads:retry`                        | создать новую задачу с актуальными настройками |
+| `downloads:remove`                       | удалить неактивную задачу                      |
+| `downloads:list`                         | получить очередь                               |
+| `downloads:clear-history`                | удалить завершённые и неактивные задачи        |
+| `downloads:update`                       | main → renderer: задача и снимок очереди       |
+| `settings:get`                           | получить настройки                             |
+| `settings:update`                        | нормализовать и сохранить настройки            |
+| `settings:get-effective-options-preview` | получить итоговые аргументы перед URL          |
+| `settings:choose-download-directory`     | выбрать папку через Electron dialog            |
+| `settings:import-config-file`            | выбрать и импортировать config-файл            |
+| `settings:import-config-file-by-path`    | импортировать config по указанному пути        |
+| `shell:open-url`                         | открыть только `http`/`https` URL              |
+| `shell:open-folder`                      | открыть папку через системный shell            |
 
 Renderer дополнительно содержит browser-preview реализацию `window.ytdlp`. Она нужна для визуального preview без Electron preload и не запускает реальный `yt-dlp`.
 

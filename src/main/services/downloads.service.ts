@@ -198,7 +198,8 @@ export class DownloadsService {
       child.on('error', (error) => {
         task.status = 'failed';
         task.finishedAt = Date.now();
-        task.userMessage = 'Не удалось запустить yt-dlp. Проверь установку приложения и доступность бинарника.';
+        task.userMessage =
+          'Не удалось запустить yt-dlp. Проверь установку приложения и доступность бинарника.';
         task.log.push(`Ошибка запуска yt-dlp: ${error.message}`);
         this.activeTaskIds.delete(task.id);
         this.emitQueueUpdate(task);

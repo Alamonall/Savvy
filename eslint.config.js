@@ -18,5 +18,13 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-misused-promises': 'error'
     }
+  },
+  {
+    files: ['tests/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly'
+      }
+    }
   }
 );
