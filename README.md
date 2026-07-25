@@ -49,11 +49,11 @@ npm run lint:fix
 
 ## Релизы и nightly
 
-Стабильный релиз создаётся semantic-release после push в `main` или `master`.
+Стабильный релиз создаётся semantic-release после push в `master`.
 Для тестовых сборок используются ветки `release/nightly` и `release/beta`:
 
 ```bash
-git switch main
+git switch master
 git pull --ff-only
 git switch -c release/nightly
 git push -u origin release/nightly
@@ -68,7 +68,7 @@ git push -u origin release/beta
 
 Каждый push создаёт GitHub prerelease: для nightly — `0.3.3-nightly.1`,
 `0.3.3-nightly.2`, а для beta — `0.3.3-beta.1`, `0.3.3-beta.2` и так далее.
-Стабильная версия публикуется обычным push в `main` или `master`.
+Стабильная версия публикуется обычным push в `master`.
 
 Отдельный CI запускает проверки качества и тесты для этих веток, а также для
 pull request в них.

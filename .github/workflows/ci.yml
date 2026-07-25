@@ -3,13 +3,11 @@ name: CI
 on:
   push:
     branches:
-      - main
       - master
       - release/nightly
       - release/beta
   pull_request:
     branches:
-      - main
       - master
       - release/nightly
       - release/beta

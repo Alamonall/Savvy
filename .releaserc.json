@@ -1,6 +1,5 @@
 {
   "branches": [
-    "main",
     "master",
     { "name": "release/nightly", "prerelease": "nightly" },
     { "name": "release/beta", "prerelease": "beta" }

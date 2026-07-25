@@ -27,7 +27,7 @@ test('скрипты качества кода доступны из package.jso
 });
 
 test('CI проверяет стабильные и prerelease-ветки', () => {
-  for (const branch of ['main', 'master', 'release/nightly', 'release/beta']) {
+  for (const branch of ['master', 'release/nightly', 'release/beta']) {
     assert.match(ciWorkflow, new RegExp(`- ${branch.replace('/', '\\/')}`));
   }
 

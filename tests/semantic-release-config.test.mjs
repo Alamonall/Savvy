@@ -13,7 +13,6 @@ const releaseConfig = JSON.parse(
 );
 
 test('release workflow runs on the default branch and has release permissions', () => {
-  assert.match(workflow, /push:\s*\n\s+branches:\s*\n\s+- main/);
   assert.match(workflow, /\n\s+- master/);
   assert.match(workflow, /\n\s+- release\/nightly/);
   assert.match(workflow, /\n\s+- release\/beta/);
@@ -36,16 +35,15 @@ test('release workflow uploads only distributable installer files', () => {
 
 test('semantic release publishes every merge and attaches installer artifacts', () => {
   assert.deepEqual(releaseConfig.branches, [
-    'main',
     'master',
     { name: 'release/nightly', prerelease: 'nightly' },
     { name: 'release/beta', prerelease: 'beta' }
   ]);
-  assert.deepEqual(releaseConfig.branches[2], {
+  assert.deepEqual(releaseConfig.branches[1], {
     name: 'release/nightly',
     prerelease: 'nightly'
   });
-  assert.deepEqual(releaseConfig.branches[3], {
+  assert.deepEqual(releaseConfig.branches[2], {
     name: 'release/beta',
     prerelease: 'beta'
   });
