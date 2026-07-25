@@ -47,31 +47,27 @@ npm run lint:fix
 
 Форматирование выполняется Prettier, статический анализ — ESLint с TypeScript-проверками.
 
-## Релизы и nightly
+## Релизы и alpha
 
-Стабильный релиз создаётся semantic-release после push в `master`.
-Для тестовых сборок используются ветки `release/nightly` и `release/beta`:
+После каждого push в `master`, включая merge pull request, semantic-release
+создаёт GitHub prerelease и тег с суффиксом `alpha`: например,
+`0.0.1-alpha.1`, `0.0.1-alpha.2`.
+
+Стабильные релизы создаются вручную.
+
+Чтобы запустить alpha-релиз, изменения должны попасть в `master`:
 
 ```bash
 git switch master
 git pull --ff-only
-git switch -c release/nightly
-git push -u origin release/nightly
+git push origin master
 ```
 
-Для beta используется аналогичная команда с заменой имени ветки:
+Исходная версия проекта — `0.0.1`; дальнейший номер alpha определяется
+semantic-release по Git-тегам.
 
-```bash
-git switch -c release/beta
-git push -u origin release/beta
-```
-
-Каждый push создаёт GitHub prerelease: для nightly — `0.3.3-nightly.1`,
-`0.3.3-nightly.2`, а для beta — `0.3.3-beta.1`, `0.3.3-beta.2` и так далее.
-Стабильная версия публикуется обычным push в `master`.
-
-Отдельный CI запускает проверки качества и тесты для этих веток, а также для
-pull request в них.
+Отдельный CI запускает проверки качества и тесты для `master`, а также для
+pull request в эту ветку.
 
 semantic-release определяет предыдущую версию по Git-тегам. После очистки старых
 релизов нужно также удалить старые теги `v1.*` и оставить или создать тег
