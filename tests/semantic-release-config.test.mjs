@@ -16,6 +16,7 @@ test('release workflow runs on the default branch and has release permissions', 
   assert.match(workflow, /push:\s*\n\s+branches:\s*\n\s+- main/);
   assert.match(workflow, /\n\s+- master/);
   assert.match(workflow, /contents:\s*write/);
+  assert.match(workflow, /issues:\s*write/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /semantic-release/);
 });
