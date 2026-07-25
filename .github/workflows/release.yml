@@ -95,7 +95,7 @@ jobs:
         run: npm ci
 
       - name: Установить версию сборки
-        run: npm version --no-git-tag-version --allow-same-version "${{ needs.version.outputs.version }}"
+        run: npm version --no-git-tag-version "${{ needs.version.outputs.version }}"
 
       - name: Собрать установщик
         run: ${{ matrix.command }}
