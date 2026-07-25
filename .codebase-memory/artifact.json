@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "f8cd794f053b2428d49f63603bb1ce8be0b6b7fc",
+    "indexed_at": "2026-07-25T11:03:35Z",
+    "project": "ytdlp-my",
+    "nodes": 343,
+    "edges": 813,
+    "original_size": 1900544,
+    "compressed_size": 288471,
+    "compression_level": 9
+}

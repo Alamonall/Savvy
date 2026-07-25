@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common';
-import { BinaryLocatorService } from './services/binary-locator.service';
-import { DownloadsService } from './services/downloads.service';
-import { ElectronShellService } from './services/electron-shell.service';
-import { SettingsService } from './services/settings.service';
+import { BinaryLocatorModule } from './modules/binary-locator.module';
+import { DownloadsModule } from './modules/downloads.module';
+import { ElectronShellModule } from './modules/electron-shell.module';
+import { SettingsModule } from './modules/settings.module';
 
 @Module({
-  providers: [BinaryLocatorService, DownloadsService, ElectronShellService, SettingsService],
-  exports: [BinaryLocatorService, DownloadsService, ElectronShellService, SettingsService]
+  imports: [BinaryLocatorModule, DownloadsModule, ElectronShellModule, SettingsModule]
 })
 export class AppModule {}
