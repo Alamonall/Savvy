@@ -32,9 +32,8 @@ test('release workflow uploads only distributable installer files', () => {
   assert.doesNotMatch(workflow, /\n\s+path: dist\/\*/);
 });
 
-test('semantic release publishes alpha releases from master and attaches installer artifacts', () => {
-  assert.deepEqual(releaseConfig.branches, [{ name: 'master', prerelease: 'alpha' }]);
-  assert.equal(releaseConfig.branches[0].prerelease, 'alpha');
+test('semantic release publishes stable releases from master and attaches installer artifacts', () => {
+  assert.deepEqual(releaseConfig.branches, ['master']);
   assert.match(JSON.stringify(releaseConfig.plugins), /@semantic-release\/github/);
   assert.match(workflow, /Обновить версию package\.json/);
   assert.match(workflow, /\[skip ci\]/);
