@@ -12,7 +12,7 @@ const releaseConfig = JSON.parse(
   await readFile(new URL('../.releaserc.json', import.meta.url), 'utf8')
 );
 
-test('release workflow runs releases on the default branch', () => {
+test('release workflow runs alpha releases on the default branch and stable releases manually', () => {
   assert.match(workflow, /\n\s+- master/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /github\.event_name.*workflow_dispatch/);
@@ -20,11 +20,12 @@ test('release workflow runs releases on the default branch', () => {
   assert.match(workflow, /0\.0\.1-alpha\.1/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /conventional-changelog/);
-  assert.match(workflow, /next release version is \(\[0-9\]\+\\\.\[0-9\]\+/);
+  assert.match(workflow, /stable_tag=.*git tag --list/);
+  assert.match(workflow, /alpha_tag=.*git tag --list/);
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /issues:\s*write/);
   assert.match(workflow, /npm ci/);
-  assert.match(workflow, /semantic-release/);
+  assert.doesNotMatch(workflow, /npx semantic-release/);
 });
 
 test('release workflow uploads only distributable installer files', () => {
@@ -63,26 +64,35 @@ test('semantic release calculates stable versions for manual releases', () => {
 
 test('first alpha release uses the requested version', () => {
   assert.match(workflow, /INITIAL_RELEASE_VERSION: 0\.0\.1-alpha\.1/);
-  assert.match(workflow, /v\$\{INITIAL_RELEASE_VERSION\}/);
+  assert.match(workflow, /base_version=.*INITIAL_RELEASE_VERSION/);
 });
 
-test('pushes to master calculate incrementing alpha versions', () => {
+test('pushes to master calculate incrementing alpha versions without changing the base version', () => {
   assert.match(workflow, /RELEASE_CHANNEL.*alpha/);
+  assert.match(workflow, /stable_tag=.*git tag --list 'v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+'/);
   assert.match(workflow, /alpha_tag=.*git tag --list/);
   assert.match(workflow, /echo "version=\$\{base_version\}-alpha\.\$\{alpha_number\}"/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /--prerelease --generate-notes/);
 });
 
-test('stable releases run semantic-release only from manual workflow dispatch', () => {
+test('stable releases are published without a prerelease suffix', () => {
   assert.match(workflow, /if \[ "\$RELEASE_CHANNEL" = "stable" \]; then/);
-  assert.match(workflow, /npx semantic-release/);
+  assert.match(workflow, /git commit -m "chore: подготовить стабильный релиз/);
+  assert.match(workflow, /--title "\$\{RELEASE_VERSION\}"/);
+  assert.doesNotMatch(workflow, /--prerelease.*RELEASE_CHANNEL.*stable/);
+});
+
+test('stable releases start the next alpha cycle at the next patch version', () => {
+  assert.match(workflow, /base_version=.*node --input-type=module/);
+  assert.match(workflow, /patch \+ 1/);
+  assert.match(workflow, /base_version="\$\{INITIAL_RELEASE_VERSION%-alpha\.\*\}"/);
 });
 
 test('build jobs update package.json only when the requested version differs', () => {
   assert.match(
     workflow,
-    /if \[ "\$\(node -p \"require\('\.\/package\.json'\)\.version\"\)" != "\$\{?RELEASE_VERSION\}?" \]; then/
+    /if \[ "\$\(node -p "require\('\.\/package\.json'\)\.version"\)" != "\$\{?RELEASE_VERSION\}?" \]; then/
   );
   assert.match(workflow, /npm version --no-git-tag-version/);
   assert.doesNotMatch(workflow, /--allow-same-version/);
@@ -112,6 +122,5 @@ test('CI-only commits do not create a release', async () => {
 
 test('workflow skips build and publish jobs without release changes', () => {
   assert.match(workflow, /if: needs\.version\.outputs\.should-release == 'true'/g);
-  assert.match(workflow, /if \[ -z "\$base_version" \]; then/);
-  assert.match(workflow, /should-release=false/);
+  assert.match(workflow, /echo "should-release=true"/);
 });
