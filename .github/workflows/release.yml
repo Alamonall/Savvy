@@ -56,12 +56,15 @@ jobs:
           - platform: Linux
             runner: ubuntu-latest
             command: npm run dist:linux
+            artifact-path: dist/*.{AppImage,deb}
           - platform: macOS
             runner: macos-latest
             command: npm run dist:mac
+            artifact-path: dist/*.{dmg,zip}
           - platform: Windows
             runner: windows-latest
             command: npm run dist:windows
+            artifact-path: dist/*.{exe,blockmap}
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Получить исходный код
@@ -86,7 +89,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.platform }}
-          path: dist/*
+          path: ${{ matrix.artifact-path }}
           if-no-files-found: error
 
   release:
