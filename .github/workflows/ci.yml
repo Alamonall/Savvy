@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - release/nightly
+      - release/beta
+  pull_request:
+    branches:
+      - master
+      - release/nightly
+      - release/beta
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Проверить проект
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v5
+
+      - name: Настроить Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Проверить качество кода
+        run: npm run quality:check
+
+      - name: Запустить тесты
+        run: npm test

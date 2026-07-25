@@ -3,4 +3,5 @@ dist
 out
 build
 coverage
+.codebase-memory
 *.lock
