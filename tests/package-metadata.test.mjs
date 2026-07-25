@@ -9,7 +9,7 @@ test('package metadata is sufficient for Linux package targets', async () => {
   );
 
   assert.equal(packageJson.name, 'savvy');
-  assert.equal(packageJson.version, '0.0.1');
+  assert.equal(packageJson.version, '0.0.1-alpha.1');
   assert.equal(packageJson.homepage, 'https://github.com/Alamonall/Savvy');
   assert.match(packageJson.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/);
   assert.equal(packageJson.build.appId, 'com.alamonall.savvy');
