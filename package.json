@@ -16,12 +16,13 @@
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "fix:electron": "rm -rf node_modules/electron && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ bun install --force",
     "build": "electron-vite build",
-    "dist": "npm run build && electron-builder --publish never",
-    "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip --publish never",
-    "dist:windows": "npm run build && electron-builder --win nsis --publish never",
-    "publish": "electron-builder",
-    "publish:mac": "electron-builder --mac dmg zip",
+    "prepare:ytdlp": "node scripts/download-ytdlp.mjs",
+    "dist": "npm run prepare:ytdlp && npm run build && electron-builder --publish never",
+    "dist:linux": "npm run prepare:ytdlp && npm run build && electron-builder --linux AppImage deb --publish never",
+    "dist:mac": "npm run prepare:ytdlp && npm run build && electron-builder --mac dmg zip --publish never",
+    "dist:windows": "npm run prepare:ytdlp && npm run build && electron-builder --win nsis --publish never",
+    "publish": "npm run prepare:ytdlp && electron-builder",
+    "publish:mac": "npm run prepare:ytdlp && electron-builder --mac dmg zip",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -67,6 +68,12 @@
     "files": [
       "out/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/ytdlp",
+        "to": "bin"
+      }
     ],
     "asar": true,
     "mac": {
