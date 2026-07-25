@@ -120,8 +120,11 @@ export class ElectronApplication {
       downloads.startNext();
       return updatedSettings;
     });
-    ipcMain.handle('settings:choose-download-directory', (_, currentPath: string) =>
-      shell.chooseDownloadDirectory(currentPath)
+    ipcMain.handle('settings:list-folder-directories', (_, currentPath: string) =>
+      shell.listFolderDirectories(currentPath)
+    );
+    ipcMain.handle('settings:suggest-folder-directories', (_, inputPath: string) =>
+      shell.suggestFolderDirectories(inputPath)
     );
     ipcMain.handle('settings:import-config-file', () => shell.importConfigFile());
     ipcMain.handle('settings:import-config-file-by-path', (_, filePath: string) =>

@@ -27,8 +27,11 @@ const api: YtdlpApi = {
   getEffectiveOptionsPreview() {
     return ipcRenderer.invoke('settings:get-effective-options-preview');
   },
-  chooseDownloadDirectory(currentPath: string) {
-    return ipcRenderer.invoke('settings:choose-download-directory', currentPath);
+  listFolderDirectories(currentPath: string) {
+    return ipcRenderer.invoke('settings:list-folder-directories', currentPath);
+  },
+  suggestFolderDirectories(inputPath: string) {
+    return ipcRenderer.invoke('settings:suggest-folder-directories', inputPath);
   },
   importConfigFile() {
     return ipcRenderer.invoke('settings:import-config-file');
