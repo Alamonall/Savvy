@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release-version.outputs.version }}
+      should-release: ${{ steps.release-version.outputs.should-release }}
     steps:
       - name: Получить исходный код
         uses: actions/checkout@v5
@@ -43,20 +45,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INITIAL_RELEASE_VERSION: ${{ env.INITIAL_RELEASE_VERSION }}
+          RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'alpha' }}
         run: |
-          if ! git rev-parse "v${INITIAL_RELEASE_VERSION}" >/dev/null 2>&1; then
+          set -o pipefail
+          if [ "$RELEASE_CHANNEL" = "alpha" ] && ! git rev-parse "v${INITIAL_RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "should-release=true" >> "$GITHUB_OUTPUT"
             echo "version=${INITIAL_RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          set -o pipefail
           release_log="$(mktemp)"
           npx semantic-release --dry-run 2>&1 | tee "$release_log"
-          version="$(sed -nE 's/.*next release version is ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?).*/\1/p' "$release_log" | tail -n 1)"
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          base_version="$(sed -nE 's/.*next release version is ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' "$release_log" | tail -n 1)"
+          if [ -z "$base_version" ]; then
+            echo "should-release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "should-release=true" >> "$GITHUB_OUTPUT"
+          if [ "$RELEASE_CHANNEL" = "stable" ]; then
+            echo "version=$base_version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          alpha_tag="$(git tag --list "v${base_version}-alpha.*" | sort -V | tail -n 1)"
+          alpha_number=1
+          if [ -n "$alpha_tag" ]; then
+            alpha_number="$(( ${alpha_tag##*.} + 1 ))"
+          fi
+          echo "version=${base_version}-alpha.${alpha_number}" >> "$GITHUB_OUTPUT"
 
   build:
     name: Собрать ${{ matrix.platform }}
+    if: needs.version.outputs.should-release == 'true'
     needs: version
     strategy:
       fail-fast: false
@@ -95,7 +113,13 @@ jobs:
         run: npm ci
 
       - name: Установить версию сборки
-        run: npm version --no-git-tag-version "${{ needs.version.outputs.version }}"
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        shell: bash
+        run: |
+          if [ "$(node -p "require('./package.json').version")" != "$RELEASE_VERSION" ]; then
+            npm version --no-git-tag-version "$RELEASE_VERSION"
+          fi
 
       - name: Собрать установщик
         run: ${{ matrix.command }}
@@ -109,6 +133,7 @@ jobs:
 
   release:
     name: Опубликовать релиз
+    if: needs.version.outputs.should-release == 'true'
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
@@ -139,7 +164,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           INITIAL_RELEASE_VERSION: ${{ env.INITIAL_RELEASE_VERSION }}
+          RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'alpha' }}
         run: |
+          if [ "$RELEASE_CHANNEL" = "stable" ]; then
+            npx semantic-release
+            exit 0
+          fi
+          node --input-type=module -e "import fs from 'node:fs'; const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8')); packageJson.version = process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(packageJson, null, 2) + '\\n');"
           if [ "$RELEASE_VERSION" = "$INITIAL_RELEASE_VERSION" ] && ! git rev-parse "v${INITIAL_RELEASE_VERSION}" >/dev/null 2>&1; then
             npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
             git config user.name 'github-actions[bot]'
@@ -151,10 +182,19 @@ jobs:
             gh release create "v${RELEASE_VERSION}" release-assets/* \
               --title "${RELEASE_VERSION}" --prerelease --generate-notes
           else
-            npx semantic-release
+            npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add CHANGELOG.md package.json
+            git commit -m "chore: подготовить prerelease ${RELEASE_VERSION} [skip ci]"
+            git tag -a "v${RELEASE_VERSION}" -m "Релиз ${RELEASE_VERSION}"
+            git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
+            gh release create "v${RELEASE_VERSION}" release-assets/* \
+              --title "${RELEASE_VERSION}" --prerelease --generate-notes
           fi
 
       - name: Обновить версию package.json
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

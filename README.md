@@ -49,10 +49,11 @@ npm run lint:fix
 
 ## Релизы
 
-После merge pull request в `master` workflow публикует prerelease `0.0.1-alpha.1`:
-создаёт тег, GitHub Release с автоматически сгенерированными Release Notes и
-файл `CHANGELOG.md`. Последующие изменения в `master` получают следующие alpha-
-версии через semantic-release.
+Первый merge pull request в `master` workflow публикует prerelease
+`0.0.1-alpha.1`: создаёт тег, GitHub Release с автоматически сгенерированными
+Release Notes и файл `CHANGELOG.md`. Последующие изменения в `master` получают
+следующие alpha-версии. Стабильный релиз запускается вручную через
+`Actions → Release → Run workflow`.
 
 ```bash
 git switch master
