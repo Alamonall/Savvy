@@ -47,6 +47,7 @@ export class ElectronApplication {
     });
 
     this.registerIpcHandlers();
+    this.setDockIcon();
     this.createWindow();
     app.on('activate', this.handleActivate);
   }
@@ -113,11 +114,22 @@ export class ElectronApplication {
 
   private getAppIconPath(): string | undefined {
     const candidates = [
-      join(app.getAppPath(), 'src/renderer/public/media-download.svg'),
-      join(__dirname, '../renderer/media-download.svg')
+      join(app.getAppPath(), 'src/renderer/public/savvy.png'),
+      join(__dirname, '../renderer/savvy.png')
     ];
 
     return candidates.find((iconPath) => existsSync(iconPath));
+  }
+
+  private setDockIcon(): void {
+    if (process.platform !== 'darwin' || !app.dock) {
+      return;
+    }
+
+    const iconPath = this.getAppIconPath();
+    if (iconPath) {
+      app.dock.setIcon(iconPath);
+    }
   }
 
   private showDownloadDoneNotification(title: string): void {
