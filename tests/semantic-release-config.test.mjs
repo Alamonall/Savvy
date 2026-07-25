@@ -65,6 +65,10 @@ test('first alpha release uses the requested version', () => {
   assert.match(workflow, /v\$\{INITIAL_RELEASE_VERSION\}/);
 });
 
+test('build jobs allow the initial version to match package.json', () => {
+  assert.match(workflow, /npm version --no-git-tag-version --allow-same-version/);
+});
+
 test('merge commit without a conventional type gets a patch release', async () => {
   const analyzerConfig = releaseConfig.plugins[0][1];
   const releaseType = await analyzeCommits(analyzerConfig, {
