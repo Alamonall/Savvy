@@ -93,6 +93,19 @@ export interface DownloadUpdate {
   queue: DownloadTask[];
 }
 
+export interface FolderEntry {
+  name: string;
+  path: string;
+  displayPath: string;
+}
+
+export interface FolderListing {
+  path: string;
+  displayPath: string;
+  parentPath: string | null;
+  directories: FolderEntry[];
+}
+
 export interface YtdlpApi {
   addDownload(payload: AddDownloadPayload): Promise<DownloadTask>;
   retryDownload(taskId: string): Promise<DownloadTask>;
@@ -101,7 +114,8 @@ export interface YtdlpApi {
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
   getEffectiveOptionsPreview(): Promise<string>;
-  chooseDownloadDirectory(currentPath: string): Promise<string | null>;
+  listFolderDirectories(currentPath: string): Promise<FolderListing>;
+  suggestFolderDirectories(inputPath: string): Promise<FolderEntry[]>;
   importConfigFile(): Promise<AppSettings | null>;
   importConfigFileByPath(filePath: string): Promise<AppSettings>;
   clearHistory(): Promise<DownloadTask[]>;

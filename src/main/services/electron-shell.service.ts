@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
-import type { AppSettings } from '../../shared/types';
+import type { AppSettings, FolderEntry, FolderListing } from '../../shared/types';
 import { SettingsService } from './settings.service';
 
 const require = createRequire(import.meta.url);
@@ -19,17 +21,76 @@ export class ElectronShellService {
     this.mainWindow = window;
   }
 
-  async chooseDownloadDirectory(currentPath: string): Promise<string | null> {
-    const options: Electron.OpenDialogOptions = {
-      defaultPath: currentPath || this.settingsService.get().downloadDir,
-      properties: ['openDirectory', 'createDirectory']
+  /**
+   * Возвращает директории текущего уровня для встроенного выбора папки.
+   *
+   * @param currentPath Путь к директории, которую нужно открыть.
+   */
+  async listFolderDirectories(currentPath: string): Promise<FolderListing> {
+    const normalizedPath = this.normalizeFolderPath(currentPath);
+    const directories = await this.readDirectories(normalizedPath);
+
+    return {
+      path: normalizedPath,
+      displayPath: normalizedPath.replace(homedir(), '~'),
+      parentPath: dirname(normalizedPath) === normalizedPath ? null : dirname(normalizedPath),
+      directories
     };
+  }
 
-    const result = this.mainWindow
-      ? await dialog.showOpenDialog(this.mainWindow, options)
-      : await dialog.showOpenDialog(options);
+  /**
+   * Возвращает директории, совпадающие с частично введенным путем.
+   *
+   * @param inputPath Частично введенный путь к директории.
+   */
+  async suggestFolderDirectories(inputPath: string): Promise<FolderEntry[]> {
+    const expandedPath = this.expandHome(inputPath.trim() || homedir());
+    const hasTrailingSeparator = expandedPath.endsWith('/');
+    const parentPath = hasTrailingSeparator ? expandedPath : dirname(expandedPath);
+    const prefix = hasTrailingSeparator ? '' : expandedPath.slice(parentPath.length + 1);
+    let directories: FolderEntry[];
+    try {
+      directories = await this.readDirectories(resolve(parentPath));
+    } catch (error) {
+      if (this.isMissingDirectoryError(error)) {
+        return [];
+      }
 
-    return result.canceled ? null : (result.filePaths.at(0) ?? null);
+      throw error;
+    }
+
+    return directories.filter((directory) =>
+      directory.name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())
+    );
+  }
+
+  private normalizeFolderPath(currentPath: string): string {
+    return resolve(
+      this.expandHome(currentPath.trim() || this.settingsService.get().downloadDir || homedir())
+    );
+  }
+
+  private expandHome(path: string): string {
+    return path.replace(/^~(?=$|\/)/, homedir());
+  }
+
+  private async readDirectories(directoryPath: string): Promise<FolderEntry[]> {
+    const entries = await readdir(directoryPath, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const path = join(directoryPath, entry.name);
+        return { name: entry.name, path, displayPath: this.toDisplayPath(path) };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
+  }
+
+  private toDisplayPath(path: string): string {
+    return path.replace(homedir(), '~');
+  }
+
+  private isMissingDirectoryError(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
   }
 
   async importConfigFile(): Promise<AppSettings | null> {

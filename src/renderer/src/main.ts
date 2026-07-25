@@ -1,4 +1,4 @@
-import type { AppSettings, DownloadTask } from '../../shared/types';
+import type { AppSettings, DownloadTask, FolderEntry, FolderListing } from '../../shared/types';
 import './styles.css';
 
 type Tab = 'queue' | 'settings';
@@ -51,6 +51,15 @@ type ConfigVersion = {
   createdAt: number;
   text: string;
 };
+type FolderPickerState = {
+  targetKey: keyof AppSettings;
+  listing: FolderListing | null;
+  error: string | null;
+  selectedIndex: number;
+  suggestions: FolderEntry[];
+  pathDraft: string;
+  suggestionRequestId: number;
+};
 
 const COLLAPSED_DAYS_KEY = 'ytdlp-collapsed-days';
 const EXPANDED_URL_GROUPS_KEY = 'ytdlp-expanded-url-groups';
@@ -73,6 +82,7 @@ let textConfigDraft: string | null = null;
 let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
 let collapsedDays = readCollapsedDays();
 let expandedUrlGroups = readExpandedUrlGroups();
+let folderPicker: FolderPickerState | null = null;
 let settings: AppSettings = {
   downloadDir: '',
   maxConcurrentDownloads: 1,
@@ -900,8 +910,17 @@ function installBrowserPreviewApi(): void {
     async getEffectiveOptionsPreview() {
       return buildEffectiveOptionsPreview(previewSettings);
     },
-    async chooseDownloadDirectory(currentPath) {
-      return currentPath || 'Browser preview';
+    async listFolderDirectories(currentPath) {
+      const path = currentPath || previewSettings.downloadDir || 'Browser preview';
+      return {
+        path,
+        displayPath: path,
+        parentPath: null,
+        directories: []
+      };
+    },
+    async suggestFolderDirectories() {
+      return [];
     },
     async importConfigFile() {
       throw new Error('Импорт через диалог доступен только в Electron.');
@@ -1746,11 +1765,6 @@ function render(): void {
             <section class="panel">
               <form class="add-form" id="add-form">
                 <input id="url-input" type="url" value="${escapeHtml(urlDraft)}" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" required />
-                <div class="download-folder-context">
-                  <span class="download-folder-label">Папка скачивания</span>
-                  <span class="download-folder-value" title="${escapeHtml(settings.downloadDir || 'Папка не выбрана')}">${escapeHtml(settings.downloadDir || 'Папка не выбрана')}</span>
-                  <button class="ghost bordered" id="choose-download-folder" type="button">Выбрать</button>
-                </div>
                 <button class="primary" type="submit">Добавить</button>
               </form>
             </section>
@@ -1775,7 +1789,8 @@ function render(): void {
             : renderSettingsPanel()
       }
     </main>
-    ${renderConfigModal()}
+  ${renderFolderPicker()}
+  ${renderConfigModal()}
   `;
 
   bindEvents();
@@ -2008,9 +2023,6 @@ function bindQueueStaticEvents(): void {
     void addDownload();
   });
 
-  document.querySelector<HTMLButtonElement>('#choose-download-folder')?.addEventListener('click', () => {
-    void chooseDownloadFolder();
-  });
 }
 
 function bindEvents(): void {
@@ -2025,6 +2037,7 @@ function bindEvents(): void {
   bindQueueTaskEvents();
   bindQueueGroupEvents();
   bindQueueStaticEvents();
+  bindFolderPickerEvents();
 
   document.querySelector<HTMLInputElement>('#url-input')?.addEventListener('blur', () => {
     applyPendingQueue();
@@ -2040,28 +2053,260 @@ function bindEvents(): void {
 }
 
 async function chooseSettingPath(key: keyof AppSettings): Promise<void> {
-  const currentValue = settings[key];
-  const selectedPath = await window.ytdlp.chooseDownloadDirectory(
-    typeof currentValue === 'string' ? currentValue : settings.downloadDir
-  );
+  await openFolderPicker(key);
+}
 
-  if (!selectedPath) {
-    return;
+async function openFolderPicker(targetKey: keyof AppSettings): Promise<void> {
+  const picker: FolderPickerState = {
+    targetKey,
+    listing: null,
+    error: null,
+    selectedIndex: 0,
+    suggestions: [],
+    pathDraft: '',
+    suggestionRequestId: 0
+  };
+  folderPicker = picker;
+  render();
+
+  try {
+    picker.listing = await window.ytdlp.listFolderDirectories(
+      typeof settings[targetKey] === 'string' ? String(settings[targetKey]) : settings.downloadDir
+    );
+    picker.selectedIndex = 0;
+    picker.pathDraft = picker.listing.displayPath;
+  } catch (error) {
+    picker.error = error instanceof Error ? error.message : 'Не удалось открыть папку.';
   }
 
-  await updateLocalSettings({ [key]: selectedPath } as Partial<AppSettings>);
   render();
 }
 
-async function chooseDownloadFolder(): Promise<void> {
-  const selectedPath = await window.ytdlp.chooseDownloadDirectory(settings.downloadDir);
-
-  if (!selectedPath) {
+async function navigateFolderPicker(path: string): Promise<void> {
+  if (!folderPicker) {
     return;
   }
 
-  await updateLocalSettings({ downloadDir: selectedPath });
+  try {
+    folderPicker.listing = await window.ytdlp.listFolderDirectories(path);
+    folderPicker.error = null;
+    folderPicker.selectedIndex = 0;
+    folderPicker.pathDraft = folderPicker.listing.displayPath;
+  } catch (error) {
+    folderPicker.error = error instanceof Error ? error.message : 'Не удалось открыть папку.';
+  }
   render();
+}
+
+async function addFolderPickerSelection(): Promise<void> {
+  const selectedPath = folderPicker?.listing?.path;
+  const targetKey = folderPicker?.targetKey;
+  if (!selectedPath || !targetKey) {
+    return;
+  }
+
+  folderPicker = null;
+  await updateLocalSettings({ [targetKey]: selectedPath } as Partial<AppSettings>);
+  render();
+}
+
+function renderFolderPicker(): string {
+  const picker = folderPicker;
+  if (!picker) {
+    return '';
+  }
+
+  const listing = picker.listing;
+  const directories = listing?.directories ?? [];
+  const entries = listing
+    ? [...(listing.parentPath ? [{ name: '..', path: listing.parentPath }] : []), ...directories]
+    : [];
+  const selectedIndex = Math.min(picker.selectedIndex, Math.max(entries.length - 1, 0));
+  return `
+    <div class="folder-picker-backdrop" data-folder-picker-close>
+      <section class="folder-picker" role="dialog" aria-modal="true" aria-label="Выбор папки">
+        <div class="folder-picker-header">
+          <button class="folder-picker-back" id="folder-picker-back" type="button" aria-label="Назад" ${listing?.parentPath ? '' : 'disabled'}>↶</button>
+          <input class="folder-picker-path-input" id="folder-picker-path-input" value="${escapeHtml(picker.pathDraft || listing?.displayPath || '')}" placeholder="~/Documents/" autocomplete="off" spellcheck="false" />
+          <button class="folder-picker-add" id="folder-picker-add" type="button" ${listing ? '' : 'disabled'}>Add <span>⌘ Enter</span></button>
+        </div>
+        <div class="folder-picker-content">
+          <h3>Directories</h3>
+          ${picker.error ? `<p class="folder-picker-error">${escapeHtml(picker.error)}</p>` : ''}
+          ${picker.suggestions.length ? `<div class="folder-picker-suggestions">${picker.suggestions.map((suggestion) => `<button class="folder-picker-suggestion" data-folder-picker-suggestion="${escapeHtml(suggestion.path)}" type="button"><span class="folder-picker-icon">□</span><span>${escapeHtml(suggestion.name)}</span></button>`).join('')}</div>` : ''}
+          <div class="folder-picker-list">
+            ${entries.length ? entries.map((entry, index) => `<button class="folder-picker-entry ${index === selectedIndex ? 'selected' : ''} ${entry.name === '..' ? 'folder-picker-parent' : ''}" data-folder-picker-index="${index}" data-folder-picker-path="${escapeHtml(entry.path)}" type="button"><span class="folder-picker-icon">${entry.name === '..' ? '↥' : '□'}</span><span>${escapeHtml(entry.name)}</span></button>`).join('') : '<p class="folder-picker-empty">Вложенных папок нет</p>'}
+          </div>
+        </div>
+        <footer class="folder-picker-footer">
+          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+          <span><kbd>Enter</kbd> Select</span>
+          <span><kbd>Backspace</kbd> Back</span>
+          <span><kbd>Esc</kbd> Close</span>
+          <button class="folder-picker-finder" id="folder-picker-finder" type="button" ${listing ? '' : 'disabled'}>Open in Finder</button>
+        </footer>
+      </section>
+    </div>
+  `;
+}
+
+function bindFolderPickerEvents(): void {
+  if (!folderPicker) {
+    document.onkeydown = null;
+    return;
+  }
+
+  document.querySelector<HTMLDivElement>('[data-folder-picker-close]')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) {
+      folderPicker = null;
+      render();
+    }
+  });
+  document.querySelector<HTMLButtonElement>('#folder-picker-back')?.addEventListener('click', () => {
+    const parentPath = folderPicker?.listing?.parentPath;
+    if (parentPath) {
+      void navigateFolderPicker(parentPath);
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-folder-picker-path]').forEach((button) => {
+    button.addEventListener('dblclick', () => {
+      const path = button.dataset.folderPickerPath;
+      if (path) {
+        void navigateFolderPicker(path);
+      }
+    });
+    button.addEventListener('click', () => {
+      document.querySelectorAll('.folder-picker-entry.selected').forEach((entry) => entry.classList.remove('selected'));
+      button.classList.add('selected');
+      if (folderPicker) {
+        folderPicker.selectedIndex = Number(button.dataset.folderPickerIndex ?? '0');
+      }
+    });
+  });
+  document.querySelector<HTMLButtonElement>('#folder-picker-add')?.addEventListener('click', () => {
+    void addFolderPickerSelection();
+  });
+  document.querySelector<HTMLButtonElement>('#folder-picker-finder')?.addEventListener('click', () => {
+    const path = folderPicker?.listing?.path;
+    if (path) {
+      void window.ytdlp.openFolder(path);
+    }
+  });
+  document.querySelector<HTMLInputElement>('#folder-picker-path-input')?.addEventListener('input', (event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    if (folderPicker) {
+      const cursorPosition = input.selectionStart ?? input.value.length;
+      folderPicker.pathDraft = input.value;
+      void refreshFolderSuggestions(input.value, cursorPosition);
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-folder-picker-suggestion]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const path = button.dataset.folderPickerSuggestion;
+      if (path) {
+        void navigateFolderPicker(path);
+      }
+    });
+  });
+  document.onkeydown = (event) => {
+    if (!folderPicker) {
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      folderPicker = null;
+      render();
+      return;
+    }
+
+    const isPathInput = event.target instanceof HTMLInputElement;
+    if (
+      !isPathInput &&
+      event.key.length === 1 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      const input = document.querySelector<HTMLInputElement>('#folder-picker-path-input');
+      if (input) {
+        event.preventDefault();
+        input.focus();
+        const cursorPosition = input.value.length;
+        input.setSelectionRange(cursorPosition, cursorPosition);
+        input.setRangeText(event.key, cursorPosition, cursorPosition, 'end');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return;
+    }
+
+    if (event.key === 'Backspace' && !isPathInput && folderPicker.listing?.parentPath) {
+      event.preventDefault();
+      void navigateFolderPicker(folderPicker.listing.parentPath);
+      return;
+    }
+
+    if (!isPathInput && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      const entryCount = document.querySelectorAll<HTMLButtonElement>('[data-folder-picker-path]').length;
+      if (entryCount > 0) {
+        event.preventDefault();
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        folderPicker.selectedIndex =
+          (folderPicker.selectedIndex + direction + entryCount) % entryCount;
+        render();
+      }
+      return;
+    }
+
+    if (event.key === 'Tab' && isPathInput && folderPicker.suggestions[0]) {
+      event.preventDefault();
+      const suggestion = folderPicker.suggestions[0];
+      const input = event.target as HTMLInputElement;
+      folderPicker.pathDraft = `${suggestion.displayPath}/`;
+      input.value = folderPicker.pathDraft;
+      void refreshFolderSuggestions(folderPicker.pathDraft, folderPicker.pathDraft.length);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (isPathInput && folderPicker.suggestions[0]) {
+        void navigateFolderPicker(folderPicker.suggestions[0].path);
+        return;
+      }
+      const selectedEntry = document.querySelector<HTMLButtonElement>(
+        `[data-folder-picker-index="${folderPicker.selectedIndex}"]`
+      );
+      if (selectedEntry?.dataset.folderPickerPath) {
+        void navigateFolderPicker(selectedEntry.dataset.folderPickerPath);
+      } else {
+        void addFolderPickerSelection();
+      }
+    }
+  };
+}
+
+async function refreshFolderSuggestions(inputPath: string, cursorPosition: number): Promise<void> {
+  if (!folderPicker) {
+    return;
+  }
+
+  const picker = folderPicker;
+  const requestId = ++picker.suggestionRequestId;
+  try {
+    picker.suggestions = await window.ytdlp.suggestFolderDirectories(inputPath);
+    picker.error = null;
+  } catch {
+    picker.suggestions = [];
+    picker.error = null;
+  }
+  if (requestId !== picker.suggestionRequestId || folderPicker !== picker) {
+    return;
+  }
+  render();
+  const input = document.querySelector<HTMLInputElement>('#folder-picker-path-input');
+  input?.focus();
+  input?.setSelectionRange(cursorPosition, cursorPosition);
 }
 
 function refreshTextConfigState(): void {

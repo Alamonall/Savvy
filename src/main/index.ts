@@ -76,8 +76,11 @@ function registerIpcHandlers(): void {
     downloadsService.startNext();
     return settings;
   });
-  ipcMain.handle('settings:choose-download-directory', (_, currentPath: string) =>
-    shellService.chooseDownloadDirectory(currentPath)
+  ipcMain.handle('settings:list-folder-directories', (_, currentPath: string) =>
+    shellService.listFolderDirectories(currentPath)
+  );
+  ipcMain.handle('settings:suggest-folder-directories', (_, inputPath: string) =>
+    shellService.suggestFolderDirectories(inputPath)
   );
   ipcMain.handle('settings:import-config-file', () => shellService.importConfigFile());
   ipcMain.handle('settings:import-config-file-by-path', (_, filePath: string) =>
