@@ -49,9 +49,10 @@ npm run lint:fix
 
 ## Релизы
 
-После каждого push в `master`, включая merge pull request, semantic-release
-создаёт стабильный GitHub-релиз и тег. Чтобы запустить релиз, изменения должны
-попасть в `master`:
+После merge pull request в `master` workflow публикует prerelease `0.0.1-alpha.1`:
+создаёт тег, GitHub Release с автоматически сгенерированными Release Notes и
+файл `CHANGELOG.md`. Последующие изменения в `master` получают следующие alpha-
+версии через semantic-release.
 
 ```bash
 git switch master
@@ -59,8 +60,8 @@ git pull --ff-only
 git push origin master
 ```
 
-Исходная версия проекта — `0.0.1`; следующий номер версии определяется
-semantic-release по Git-тегам.
+Исходная версия проекта — `0.0.1-alpha.1`. CHANGELOG обновляется плагином
+semantic-release, а Release Notes формируются по Conventional Commits.
 
 Отдельный CI запускает проверки качества и тесты для `master`, а также для
 pull request в эту ветку.
