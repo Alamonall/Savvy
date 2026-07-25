@@ -21,15 +21,17 @@ test('release workflow runs on the default branch and has release permissions', 
 });
 
 test('release workflow uploads only distributable installer files', () => {
-  assert.match(workflow, /artifact-path: dist\/\*\.\{AppImage,deb\}/);
-  assert.match(workflow, /artifact-path: dist\/\*\.\{dmg,zip\}/);
-  assert.match(workflow, /artifact-path: dist\/\*\.\{exe,blockmap\}/);
+  assert.match(workflow, /artifact-path: \|\s+dist\/\*\.AppImage\s+dist\/\*\.deb/);
+  assert.match(workflow, /artifact-path: \|\s+dist\/\*\.dmg\s+dist\/\*\.zip/);
+  assert.match(workflow, /artifact-path: \|\s+dist\/\*\.exe\s+dist\/\*\.blockmap/);
   assert.doesNotMatch(workflow, /\n\s+path: dist\/\*/);
 });
 
 test('semantic release publishes every merge and attaches installer artifacts', () => {
   assert.deepEqual(releaseConfig.branches, ['main', 'master']);
   assert.match(JSON.stringify(releaseConfig.plugins), /@semantic-release\/github/);
+  assert.match(workflow, /Обновить версию package\.json/);
+  assert.match(workflow, /\[skip ci\]/);
 
   const releaseRules = releaseConfig.plugins.find(
     (plugin) => Array.isArray(plugin) && plugin[0] === '@semantic-release/commit-analyzer'
