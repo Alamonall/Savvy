@@ -49,11 +49,11 @@ npm run lint:fix
 
 ## Релизы
 
-Первый merge pull request в `master` workflow публикует prerelease
-`0.0.1-alpha.1`: создаёт тег, GitHub Release с автоматически сгенерированными
-Release Notes и файл `CHANGELOG.md`. Последующие изменения в `master` получают
-следующие alpha-версии. Стабильный релиз запускается вручную через
-`Actions → Release → Run workflow`.
+Каждое вливание изменений в `master` workflow публикует alpha-релиз:
+`1.2.3-alpha.1`, `1.2.3-alpha.2` и так далее. До стабильного релиза меняется
+только номер alpha. Стабильный релиз запускается вручную через
+`Actions → Release → Run workflow` и публикуется без суффикса, например
+`1.2.3`. После него следующий alpha-цикл начинается с версии `1.2.4-alpha.1`.
 
 ```bash
 git switch master
@@ -61,15 +61,14 @@ git pull --ff-only
 git push origin master
 ```
 
-Исходная версия проекта — `0.0.1-alpha.1`. CHANGELOG обновляется плагином
-semantic-release, а Release Notes формируются по Conventional Commits.
+Текущая версия проекта — `0.0.1-alpha.3`. CHANGELOG обновляется через
+`conventional-changelog`, а Release Notes формируются по Conventional Commits.
 
 Отдельный CI запускает проверки качества и тесты для `master`, а также для
 pull request в эту ветку.
 
-semantic-release определяет предыдущую версию по Git-тегам. После очистки старых
-релизов нужно также удалить старые теги `v1.*` и оставить или создать тег
-`v0.0.0`; удаление только записей GitHub Releases нумерацию не сбрасывает.
+Нумерация определяется по Git-тегам: стабильный тег `v1.2.3` задаёт следующую
+alpha-основу `1.2.4`, а alpha-теги `v1.2.4-alpha.N` увеличивают только `N`.
 
 ## Архитектура
 
