@@ -10,7 +10,7 @@ test('package metadata is sufficient for Linux package targets', async () => {
 
   assert.equal(packageJson.name, 'savvy');
   assert.equal(packageJson.homepage, 'https://github.com/Alamonall/Savvy');
-  assert.equal(packageJson.version, '0.3.2');
+  assert.equal(packageJson.version, '0.0.0');
   assert.equal(packageJson.build.appId, 'com.alamonall.savvy');
   assert.equal(packageJson.build.productName, 'Savvy');
   assert.match(packageJson.build.linux.maintainer, /^Alamonall <[^>]+>$/);
