@@ -82,7 +82,9 @@ export class ElectronShellService {
         const path = join(directoryPath, entry.name);
         return { name: entry.name, path, displayPath: this.toDisplayPath(path) };
       })
-      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
+      .sort((left, right) =>
+        left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
+      );
   }
 
   private toDisplayPath(path: string): string {
@@ -90,7 +92,9 @@ export class ElectronShellService {
   }
 
   private isMissingDirectoryError(error: unknown): boolean {
-    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+    return (
+      typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+    );
   }
 
   async importConfigFile(): Promise<AppSettings | null> {
