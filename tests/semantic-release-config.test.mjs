@@ -15,6 +15,12 @@ const releaseConfig = JSON.parse(
 test('release workflow runs on the default branch and has release permissions', () => {
   assert.match(workflow, /push:\s*\n\s+branches:\s*\n\s+- main/);
   assert.match(workflow, /\n\s+- master/);
+  assert.match(workflow, /\n\s+- release\/nightly/);
+  assert.match(workflow, /\n\s+- release\/beta/);
+  assert.match(
+    workflow,
+    /next release version is \(\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\(-\[0-9A-Za-z.-\]\+\)\?\)/
+  );
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /issues:\s*write/);
   assert.match(workflow, /npm ci/);
@@ -29,7 +35,20 @@ test('release workflow uploads only distributable installer files', () => {
 });
 
 test('semantic release publishes every merge and attaches installer artifacts', () => {
-  assert.deepEqual(releaseConfig.branches, ['main', 'master']);
+  assert.deepEqual(releaseConfig.branches, [
+    'main',
+    'master',
+    { name: 'release/nightly', prerelease: 'nightly' },
+    { name: 'release/beta', prerelease: 'beta' }
+  ]);
+  assert.deepEqual(releaseConfig.branches[2], {
+    name: 'release/nightly',
+    prerelease: 'nightly'
+  });
+  assert.deepEqual(releaseConfig.branches[3], {
+    name: 'release/beta',
+    prerelease: 'beta'
+  });
   assert.match(JSON.stringify(releaseConfig.plugins), /@semantic-release\/github/);
   assert.match(workflow, /Обновить версию package\.json/);
   assert.match(workflow, /\[skip ci\]/);
@@ -44,6 +63,12 @@ test('semantic release publishes every merge and attaches installer artifacts', 
     { breaking: true, release: 'major' }
   ]);
   assert.match(JSON.stringify(releaseConfig.plugins), /release-assets\/\*\*\/*/);
+
+  const githubConfig = releaseConfig.plugins.find(
+    (plugin) => Array.isArray(plugin) && plugin[0] === '@semantic-release/github'
+  )[1];
+
+  assert.deepEqual(githubConfig.assets, [{ path: 'release-assets/**/*' }]);
 });
 
 test('merge commit without a conventional type gets a patch release', async () => {

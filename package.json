@@ -1,15 +1,15 @@
 {
-  "name": "ytdlp-my",
-  "version": "1.1.2",
+  "name": "savvy",
+  "version": "0.3.2",
   "private": true,
   "engines": {
     "node": ">=24.0.0"
   },
-  "homepage": "https://github.com/Alamonall/ytdlp-my",
+  "homepage": "https://github.com/Alamonall/Savvy",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/Alamonall/ytdlp-my.git"
+    "url": "git+ssh://git@github.com/Alamonall/Savvy.git"
   },
   "main": "out/main/index.js",
   "scripts": {
@@ -55,9 +55,9 @@
     "vite": "^7.0.6"
   },
   "build": {
-    "appId": "com.alamonall.ytdlp-my",
-    "productName": "yt-dlp My",
-    "artifactName": "${name}-${version}-${arch}.${ext}",
+    "appId": "com.alamonall.savvy",
+    "productName": "Savvy",
+    "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -76,7 +76,7 @@
       {
         "provider": "github",
         "owner": "Alamonall",
-        "repo": "ytdlp-my",
+        "repo": "Savvy",
         "channel": "nightly",
         "releaseType": "prerelease"
       }

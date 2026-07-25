@@ -1,4 +1,4 @@
-# yt-dlp My
+# Savvy
 
 Desktop-приложение на Electron для постановки ссылок в очередь и скачивания через локально установленный [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
@@ -46,6 +46,36 @@ npm run lint:fix
 ```
 
 Форматирование выполняется Prettier, статический анализ — ESLint с TypeScript-проверками.
+
+## Релизы и nightly
+
+Стабильный релиз создаётся semantic-release после push в `main` или `master`.
+Для тестовых сборок используются ветки `release/nightly` и `release/beta`:
+
+```bash
+git switch main
+git pull --ff-only
+git switch -c release/nightly
+git push -u origin release/nightly
+```
+
+Для beta используется аналогичная команда с заменой имени ветки:
+
+```bash
+git switch -c release/beta
+git push -u origin release/beta
+```
+
+Каждый push создаёт GitHub prerelease: для nightly — `0.3.3-nightly.1`,
+`0.3.3-nightly.2`, а для beta — `0.3.3-beta.1`, `0.3.3-beta.2` и так далее.
+Стабильная версия публикуется обычным push в `main` или `master`.
+
+Отдельный CI запускает проверки качества и тесты для этих веток, а также для
+pull request в них.
+
+semantic-release определяет предыдущую версию по Git-тегам. После очистки старых
+релизов нужно также удалить старые теги `v1.*` и оставить или создать тег
+`v0.3.2`; удаление только записей GitHub Releases нумерацию не сбрасывает.
 
 ## Архитектура
 

@@ -9,6 +9,7 @@ const workflow = await readFile(
   new URL('../.github/workflows/release.yml', import.meta.url),
   'utf8'
 );
+const ciWorkflow = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 
 test('проект требует Node.js 24 и использует его в CI', async () => {
   assert.equal(packageJson.engines.node, '>=24.0.0');
@@ -23,6 +24,16 @@ test('скрипты качества кода доступны из package.jso
     packageJson.scripts['quality:check'],
     'npm run format:check && npm run lint && npm run typecheck'
   );
+});
+
+test('CI проверяет стабильные и prerelease-ветки', () => {
+  for (const branch of ['main', 'master', 'release/nightly', 'release/beta']) {
+    assert.match(ciWorkflow, new RegExp(`- ${branch.replace('/', '\\/')}`));
+  }
+
+  assert.match(ciWorkflow, /npm ci/);
+  assert.match(ciWorkflow, /npm run quality:check/);
+  assert.match(ciWorkflow, /npm test/);
 });
 
 test('main-процесс разделён на Nest-модули', async () => {
