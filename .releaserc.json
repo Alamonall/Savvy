@@ -1,5 +1,9 @@
 {
-  "branches": ["main", "master"],
+  "branches": [
+    "master",
+    { "name": "release/nightly", "prerelease": "nightly" },
+    { "name": "release/beta", "prerelease": "beta" }
+  ],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -18,8 +22,7 @@
       {
         "assets": [
           {
-            "path": "release-assets/**/*",
-            "label": "Установщики"
+            "path": "release-assets/**/*"
           }
         ]
       }

@@ -11,7 +11,8 @@ import { ElectronShellService } from './services/electron-shell.service';
 import { SettingsService } from './services/settings.service';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, Notification, ipcMain } = require('electron') as typeof import('electron');
+const { app, BrowserWindow, Notification, ipcMain } =
+  require('electron') as typeof import('electron');
 
 type RuntimeServices = {
   downloads: DownloadsService;
@@ -27,7 +28,7 @@ export class ElectronApplication {
 
   /** Запускает Nest-контекст, IPC-обработчики и главное окно приложения. */
   async start(): Promise<void> {
-    app.setAppUserModelId('com.ytdlp-my.app');
+    app.setAppUserModelId('com.alamonall.savvy');
     this.nestApp = await NestFactory.createApplicationContext(AppModule, { logger: false });
     this.services = {
       downloads: this.nestApp.get(DownloadsService),
@@ -76,7 +77,7 @@ export class ElectronApplication {
       height: 720,
       minWidth: 760,
       minHeight: 560,
-      title: 'yt-dlp My',
+      title: 'Savvy',
       icon: this.getAppIconPath(),
       backgroundColor: '#f6f7f9',
       webPreferences: {
