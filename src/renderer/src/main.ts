@@ -87,7 +87,7 @@ let effectiveOptionsPreview = '';
 let textConfigDraft: string | null = null;
 let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
 let collapsedDays = readCollapsedDays();
-let collapsedSettingsSections = readCollapsedSettingsSections();
+const collapsedSettingsSections = readCollapsedSettingsSections();
 let expandedUrlGroups = readExpandedUrlGroups();
 let folderPicker: FolderPickerState | null = null;
 let theme: Theme = readTheme();
@@ -1248,7 +1248,10 @@ function renderSettingVariants(option: SettingsOption): string {
 
   if (option.kind === 'exclusive') {
     return option.choices
-      .map((choice) => `<div><strong>${escapeHtml(choice.label)}</strong>: этот режим будет применён</div>`)
+      .map(
+        (choice) =>
+          `<div><strong>${escapeHtml(choice.label)}</strong>: этот режим будет применён</div>`
+      )
       .join('');
   }
 
@@ -1323,8 +1326,12 @@ function isSettingsOptionMatching(option: SettingsOption, query: string): boolea
     option.label,
     option.description,
     option.original,
-    ...(option.kind === 'select' ? option.options.map((item) => `${item.label} ${item.value}`) : []),
-    ...(option.kind === 'exclusive' ? option.choices.map((item) => `${item.label} ${item.value}`) : [])
+    ...(option.kind === 'select'
+      ? option.options.map((item) => `${item.label} ${item.value}`)
+      : []),
+    ...(option.kind === 'exclusive'
+      ? option.choices.map((item) => `${item.label} ${item.value}`)
+      : [])
   ]
     .join(' ')
     .toLocaleLowerCase();
@@ -1353,7 +1360,9 @@ function renderSelectOptions(
     .join('');
 }
 
-function renderCookiesSourceWarning(option: Extract<SettingsOption, { kind: 'exclusive' }>): string {
+function renderCookiesSourceWarning(
+  option: Extract<SettingsOption, { kind: 'exclusive' }>
+): string {
   if (option.id !== 'cookies-source') {
     return '';
   }
@@ -1530,7 +1539,9 @@ function getCustomizedOptionKeys(partialSettings: Partial<AppSettings>): string[
     const isDirectlyChanged = changedKeys.has(optionKey);
     const isChoiceChanged =
       option.kind === 'exclusive' &&
-      option.choices.some((choice) => Object.keys(choice.patch).some((key) => changedKeys.has(key)));
+      option.choices.some((choice) =>
+        Object.keys(choice.patch).some((key) => changedKeys.has(key))
+      );
 
     if (isDirectlyChanged || isChoiceChanged) {
       customizedKeys.add(optionKey);
@@ -2045,15 +2056,17 @@ function render(): void {
 }
 
 function bindSettingsEvents(): void {
-  document.querySelector<HTMLInputElement>('#settings-search')?.addEventListener('input', (event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const cursorPosition = input.selectionStart ?? input.value.length;
-    settingsSearchQuery = input.value;
-    render();
-    const nextInput = document.querySelector<HTMLInputElement>('#settings-search');
-    nextInput?.focus();
-    nextInput?.setSelectionRange(cursorPosition, cursorPosition);
-  });
+  document
+    .querySelector<HTMLInputElement>('#settings-search')
+    ?.addEventListener('input', (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      const cursorPosition = input.selectionStart ?? input.value.length;
+      settingsSearchQuery = input.value;
+      render();
+      const nextInput = document.querySelector<HTMLInputElement>('#settings-search');
+      nextInput?.focus();
+      nextInput?.setSelectionRange(cursorPosition, cursorPosition);
+    });
 
   document.querySelectorAll<HTMLButtonElement>('[data-settings-mode]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -2099,7 +2112,7 @@ function bindSettingsEvents(): void {
       }
 
       const isExpanded = button.getAttribute('aria-expanded') === 'true';
-      text.textContent = isExpanded ? '' : button.dataset.originalText ?? '';
+      text.textContent = isExpanded ? '' : (button.dataset.originalText ?? '');
       text.hidden = isExpanded;
       button.setAttribute('aria-expanded', String(!isExpanded));
     });
@@ -2228,7 +2241,8 @@ function bindConfigModalEvents(): void {
 function bindQueueTaskEvents(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-task-id]').forEach((button) => {
     button.addEventListener('click', () => {
-      selectedTaskId = selectedTaskId === button.dataset.taskId ? null : button.dataset.taskId ?? null;
+      selectedTaskId =
+        selectedTaskId === button.dataset.taskId ? null : (button.dataset.taskId ?? null);
       refreshQueueView();
     });
   });
@@ -2804,7 +2818,11 @@ async function initializeApp(): Promise<void> {
       ...mainSettings
     };
     if (!localStorage.getItem(COOKIES_SOURCE_KEY)) {
-      cookiesSource = settings.cookiesFromBrowser ? 'browser' : settings.cookiesFile ? 'file' : 'none';
+      cookiesSource = settings.cookiesFromBrowser
+        ? 'browser'
+        : settings.cookiesFile
+          ? 'file'
+          : 'none';
     }
     effectiveOptionsPreview = await window.ytdlp.getEffectiveOptionsPreview();
     queue = await window.ytdlp.getQueue();

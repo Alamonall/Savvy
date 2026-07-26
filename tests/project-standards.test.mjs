@@ -98,9 +98,15 @@ test('итоговая команда закреплена сверху и ск�
   assert.doesNotMatch(renderer, /Унаследовано из yt-dlp/);
   assert.match(renderer, /<details class="panel settings-panel command-preview-panel">/);
   assert.match(renderer, /<summary class="command-preview-summary">/);
-  assert.doesNotMatch(renderer, /<details class="panel settings-panel command-preview-panel" open>/);
+  assert.doesNotMatch(
+    renderer,
+    /<details class="panel settings-panel command-preview-panel" open>/
+  );
   const settingsPanel = renderer.slice(renderer.indexOf('function renderSettingsPanel'));
-  assert.ok(settingsPanel.indexOf('command-preview-panel') < settingsPanel.indexOf('${renderSettingsModeTabs()}'));
+  assert.ok(
+    settingsPanel.indexOf('command-preview-panel') <
+      settingsPanel.indexOf('${renderSettingsModeTabs()}')
+  );
   assert.match(styles, /\.command-preview-panel\s*\{[\s\S]*position: sticky/);
 });
 
@@ -108,7 +114,10 @@ test('секции настроек можно сворачивать незав
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
   const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
 
-  assert.match(renderer, /<details class="panel settings-panel settings-list-panel settings-group"/);
+  assert.match(
+    renderer,
+    /<details class="panel settings-panel settings-list-panel settings-group"/
+  );
   assert.match(renderer, /data-settings-section=/);
   assert.match(renderer, /querySelectorAll<HTMLDetailsElement>\('\[data-settings-section\]'\)/);
   assert.match(renderer, /COLLAPSED_SETTINGS_SECTIONS_KEY/);
@@ -136,8 +145,8 @@ test('cookie-настройки отображаются только для в�
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
   assert.match(renderer, /function isSettingsOptionVisible\(option: SettingsOption\)/);
-  assert.match(renderer, /cookiesFromBrowser.*browser/);
-  assert.match(renderer, /cookiesFile.*file/);
+  assert.match(renderer, /cookiesFromBrowser[\s\S]*browser/);
+  assert.match(renderer, /cookiesFile[\s\S]*file/);
   assert.match(renderer, /isSettingsOptionVisible\(option\)/);
 });
 
@@ -146,7 +155,10 @@ test('настройки можно искать через закреплённ
   const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
 
   assert.match(renderer, /id="settings-search"/);
-  assert.match(renderer, /function isSettingsOptionMatching\(option: SettingsOption, query: string\)/);
+  assert.match(
+    renderer,
+    /function isSettingsOptionMatching\(option: SettingsOption, query: string\)/
+  );
   assert.match(renderer, /settingsSearchQuery = input.value/);
   assert.match(styles, /\.settings-search-panel\s*\{[\s\S]*position: sticky/);
 });
@@ -162,7 +174,10 @@ test('успешная попытка определяет статус груп
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
   const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
 
-  assert.match(renderer, /if \(tasks\.some\(\(task\) => task\.status === 'done'\)\) \{[\s\S]*return 'done';/);
+  assert.match(
+    renderer,
+    /if \(tasks\.some\(\(task\) => task\.status === 'done'\)\) \{[\s\S]*return 'done';/
+  );
   assert.match(renderer, /successfulTask \? renderTaskActions\(successfulTask\) : ''/);
   assert.match(renderer, /class="task task-url-group-header"/);
   assert.match(styles, /\.task-url-group-header:has\(\.task-url-toggle:hover\)/);
@@ -178,7 +193,7 @@ test('UI-элементы переиспользуют общий стиль', a
 test('повторный клик по задаче сворачивает её лог', async () => {
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
-  assert.match(renderer, /selectedTaskId === button\.dataset\.taskId \? null : button\.dataset\.taskId \?\? null/);
+  assert.match(renderer, /selectedTaskId === button\.dataset\.taskId/);
   assert.match(renderer, /refreshQueueView\(\);/);
   assert.doesNotMatch(renderer, /data-close-log/);
 });
