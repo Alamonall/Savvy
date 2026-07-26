@@ -104,6 +104,17 @@ test('итоговая команда закреплена сверху и ск�
   assert.match(styles, /\.command-preview-panel\s*\{[\s\S]*position: sticky/);
 });
 
+test('секции настроек можно сворачивать независимо', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(renderer, /<details class="panel settings-panel settings-list-panel settings-group"/);
+  assert.match(renderer, /data-settings-section=/);
+  assert.match(renderer, /querySelectorAll<HTMLDetailsElement>\('\[data-settings-section\]'\)/);
+  assert.match(renderer, /COLLAPSED_SETTINGS_SECTIONS_KEY/);
+  assert.match(styles, /\.settings-group > summary/);
+});
+
 test('дефолтный config yt-dlp встроен в приложение', async () => {
   const settingsService = await readFile(
     new URL('../src/main/services/settings.service.ts', import.meta.url),

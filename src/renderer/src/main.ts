@@ -62,6 +62,7 @@ type FolderPickerState = {
 };
 
 const COLLAPSED_DAYS_KEY = 'ytdlp-collapsed-days';
+const COLLAPSED_SETTINGS_SECTIONS_KEY = 'ytdlp-collapsed-settings-sections';
 const EXPANDED_URL_GROUPS_KEY = 'ytdlp-expanded-url-groups';
 const CONFIG_VERSIONS_KEY = 'ytdlp-config-versions';
 const THEME_KEY = 'ytdlp-theme';
@@ -84,6 +85,7 @@ let effectiveOptionsPreview = '';
 let textConfigDraft: string | null = null;
 let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
 let collapsedDays = readCollapsedDays();
+let collapsedSettingsSections = readCollapsedSettingsSections();
 let expandedUrlGroups = readExpandedUrlGroups();
 let folderPicker: FolderPickerState | null = null;
 let theme: Theme = readTheme();
@@ -1108,6 +1110,34 @@ function saveCollapsedDays(): void {
   localStorage.setItem(COLLAPSED_DAYS_KEY, JSON.stringify(collapsedDays));
 }
 
+function readCollapsedSettingsSections(): Set<number> {
+  const rawValue = localStorage.getItem(COLLAPSED_SETTINGS_SECTIONS_KEY);
+  if (!rawValue) {
+    return new Set();
+  }
+
+  try {
+    const sectionIndexes = JSON.parse(rawValue) as unknown;
+    return new Set(
+      Array.isArray(sectionIndexes)
+        ? sectionIndexes.filter(
+            (sectionIndex): sectionIndex is number =>
+              typeof sectionIndex === 'number' && Number.isInteger(sectionIndex)
+          )
+        : []
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedSettingsSections(): void {
+  localStorage.setItem(
+    COLLAPSED_SETTINGS_SECTIONS_KEY,
+    JSON.stringify([...collapsedSettingsSections])
+  );
+}
+
 function readConfigVersions(): ConfigVersion[] {
   const rawValue = localStorage.getItem(CONFIG_VERSIONS_KEY);
   if (!rawValue) {
@@ -1340,16 +1370,16 @@ function renderSettingsUiPanel(): string {
         <option value="/tmp"></option>
       </datalist>
       ${SETTINGS_OPTION_GROUPS.map(
-        (group) => `
-          <section class="panel settings-panel settings-list-panel">
-            <div class="section-head">
+        (group, index) => `
+          <details class="panel settings-panel settings-list-panel settings-group" data-settings-section="${index}" ${collapsedSettingsSections.has(index) ? '' : 'open'}>
+            <summary class="section-head">
               <h2>${escapeHtml(group.title)}</h2>
               <span>${group.options.length} опций</span>
-            </div>
+            </summary>
             <div class="settings-options">
               ${group.options.map((option) => renderSettingsOption(option)).join('')}
             </div>
-          </section>
+          </details>
         `
       ).join('')}
       <section class="panel settings-panel settings-list-panel settings-actions-panel">
@@ -1870,6 +1900,22 @@ function bindSettingsEvents(): void {
       settingsMode = button.dataset.settingsMode as SettingsMode;
       textConfigDraft = null;
       render();
+    });
+  });
+
+  document.querySelectorAll<HTMLDetailsElement>('[data-settings-section]').forEach((section) => {
+    section.addEventListener('toggle', () => {
+      const sectionIndex = Number(section.dataset.settingsSection);
+      if (!Number.isInteger(sectionIndex)) {
+        return;
+      }
+
+      if (section.open) {
+        collapsedSettingsSections.delete(sectionIndex);
+      } else {
+        collapsedSettingsSections.add(sectionIndex);
+      }
+      saveCollapsedSettingsSections();
     });
   });
 

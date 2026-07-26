@@ -538,6 +538,26 @@ textarea:focus {
   padding: 0;
 }
 
+.settings-group > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-group > summary::after {
+  content: '⌃';
+  margin-left: auto;
+  color: #667085;
+  font-size: 16px;
+}
+
+.settings-group:not([open]) > summary::after {
+  content: '⌄';
+}
+
 .settings-options {
   display: grid;
 }
