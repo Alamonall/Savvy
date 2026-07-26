@@ -1036,17 +1036,23 @@ function renderTaskLog(task: DownloadTask): string {
   const logText = task.log.length ? task.log.slice(-120).join('\n') : 'Лог пока пуст.';
 
   return `
-    <pre class="task-log" aria-label="Лог задачи">${escapeHtml(
-      [
-        `Ссылка: ${task.url}`,
-        `Название: ${task.title || task.url}`,
-        `Папка: ${task.downloadDir}`,
-        `Аргументы: ${task.optionsText || 'без дополнительных аргументов'}`,
-        ...(task.userMessage ? ['', `Причина: ${task.userMessage}`] : []),
-        '',
-        logText
-      ].join('\n')
-    )}</pre>
+    <div class="task-log-container">
+      <div class="task-log-header">
+        <span>Лог</span>
+        <button class="task-action" data-close-log="${task.id}" type="button">Свернуть</button>
+      </div>
+      <pre class="task-log" aria-label="Лог задачи">${escapeHtml(
+        [
+          `Ссылка: ${task.url}`,
+          `Название: ${task.title || task.url}`,
+          `Папка: ${task.downloadDir}`,
+          `Аргументы: ${task.optionsText || 'без дополнительных аргументов'}`,
+          ...(task.userMessage ? ['', `Причина: ${task.userMessage}`] : []),
+          '',
+          logText
+        ].join('\n')
+      )}</pre>
+    </div>
   `;
 }
 
@@ -1755,11 +1761,11 @@ function getUrlGroupStatus(tasks: DownloadTask[]): DownloadTask['status'] {
     return 'queued';
   }
 
-  if (tasks.some((task) => task.status === 'failed')) {
-    return 'failed';
+  if (tasks.some((task) => task.status === 'done')) {
+    return 'done';
   }
 
-  return 'done';
+  return 'failed';
 }
 
 function getUrlGroupTitle(url: string, tasks: DownloadTask[]): string {
@@ -1768,6 +1774,22 @@ function getUrlGroupTitle(url: string, tasks: DownloadTask[]): string {
   );
 
   return successfulTask?.title ?? tasks.find((task) => task.title)?.title ?? url;
+}
+
+function getSuccessfulTask(tasks: DownloadTask[]): DownloadTask | undefined {
+  return tasks.find((task) => task.status === 'done');
+}
+
+function renderTaskActions(task: DownloadTask): string {
+  return `
+    <div class="task-actions">
+      <button class="task-action" data-open-url="${task.id}" type="button">Ссылка</button>
+      <button class="task-action" data-open-folder="${task.id}" type="button">Папка</button>
+      <button class="task-action" data-open-log="${task.id}" type="button">Лог</button>
+      <button class="task-action" data-retry-task="${task.id}" type="button">Снова</button>
+      <button class="task-action danger-action" data-remove-task="${task.id}" type="button">Удалить</button>
+    </div>
+  `;
 }
 
 function renderUrlTaskGroupMarkup(
@@ -1780,21 +1802,25 @@ function renderUrlTaskGroupMarkup(
   const isExpanded = expandedUrlGroups[groupKey] === true;
   const status = getUrlGroupStatus(tasks);
   const title = getUrlGroupTitle(url, tasks);
+  const successfulTask = getSuccessfulTask(tasks);
 
   return `
     <div class="task-url-group">
-      <button class="task-url-toggle" data-url-group-toggle="${escapeHtml(groupKey)}" type="button">
-        <span class="task-day-arrow">${isExpanded ? '▾' : '▸'}</span>
-        <span class="task-url-group-body">
-          <span class="task-title">${escapeHtml(title)}</span>
-          <span class="task-url">${escapeHtml(url)}</span>
-        </span>
-        <span class="task-url-group-state">
-          <span class="task-url-group-count">${tasks.length}</span>
-          <span class="progress-value">${getUrlGroupProgress(tasks)}</span>
-          <span class="status ${status}">${formatStatus(status)}</span>
-        </span>
-      </button>
+      <div class="task task-url-group-header">
+        <button class="task-url-toggle" data-url-group-toggle="${escapeHtml(groupKey)}" type="button">
+          <span class="task-day-arrow">${isExpanded ? '▾' : '▸'}</span>
+          <span class="task-url-group-body">
+            <span class="task-title">${escapeHtml(title)}</span>
+            <span class="task-url">${escapeHtml(url)}</span>
+          </span>
+          <span class="task-url-group-state">
+            <span class="task-url-group-count">${tasks.length}</span>
+            <span class="progress-value">${getUrlGroupProgress(tasks)}</span>
+            <span class="status ${status}">${formatStatus(status)}</span>
+          </span>
+        </button>
+        ${successfulTask ? renderTaskActions(successfulTask) : ''}
+      </div>
       <div class="task-url-group-items ${isExpanded ? '' : 'collapsed'}">
         ${isExpanded ? tasks.map((task) => renderTaskMarkup(task, selectedTask)).join('') : ''}
       </div>
@@ -1821,13 +1847,7 @@ function renderTaskMarkup(task: DownloadTask, selectedTask: DownloadTask | null)
           <span class="status ${task.status}">${formatStatus(task.status)}</span>
         </span>
       </button>
-      <div class="task-actions">
-        <button class="task-action" data-open-url="${task.id}" type="button">Ссылка</button>
-        <button class="task-action" data-open-folder="${task.id}" type="button">Папка</button>
-        <button class="task-action" data-open-log="${task.id}" type="button">Лог</button>
-        <button class="task-action" data-retry-task="${task.id}" type="button">Снова</button>
-        <button class="task-action danger-action" data-remove-task="${task.id}" type="button">Удалить</button>
-      </div>
+      ${renderTaskActions(task)}
       ${isSelected ? renderTaskLog(task) : ''}
     </div>
   `;
@@ -2237,7 +2257,17 @@ function bindQueueTaskEvents(): void {
 
   document.querySelectorAll<HTMLButtonElement>('[data-open-log]').forEach((button) => {
     button.addEventListener('click', () => {
-      selectedTaskId = button.dataset.openLog ?? null;
+      const taskId = button.dataset.openLog ?? null;
+      selectedTaskId = selectedTaskId === taskId ? null : taskId;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-close-log]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (selectedTaskId === button.dataset.closeLog) {
+        selectedTaskId = null;
+      }
       render();
     });
   });

@@ -158,10 +158,29 @@ test('группа URL получает название успешной заг
   assert.match(renderer, /successfulTask/);
 });
 
+test('успешная попытка определяет статус группы URL', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(renderer, /if \(tasks\.some\(\(task\) => task\.status === 'done'\)\) \{[\s\S]*return 'done';/);
+  assert.match(renderer, /successfulTask \? renderTaskActions\(successfulTask\) : ''/);
+  assert.match(renderer, /class="task task-url-group-header"/);
+  assert.match(styles, /\.task-url-group-header:has\(\.task-url-toggle:hover\)/);
+});
+
+test('UI-элементы переиспользуют общий стиль', async () => {
+  const agents = await readFile(new URL('../AGENTS.md', import.meta.url), 'utf8');
+
+  assert.match(agents, /Actively reuse existing components and shared render helpers/);
+  assert.match(agents, /Equivalent UI elements must use the same DOM structure/);
+});
+
 test('повторный клик по задаче сворачивает её лог', async () => {
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
   assert.match(renderer, /selectedTaskId === button\.dataset\.taskId \? null : button\.dataset\.taskId \?\? null/);
+  assert.match(renderer, /data-close-log="\$\{task\.id\}"/);
+  assert.match(renderer, /selectedTaskId === taskId \? null : taskId/);
 });
 
 test('клик по группе повторных попыток переключает группу и закрывает лог', async () => {
