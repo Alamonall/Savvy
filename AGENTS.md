@@ -2,10 +2,10 @@
 
 ## Conventional Commits
 
-Каждый коммит обязан соответствовать формату:
+Каждый коммит обязан соответствовать формату, а весь текст commit message должен быть на английском языке:
 
 ```text
-type(scope): описание
+type(scope): description
 ```
 
 Допустимые типы:
@@ -23,7 +23,8 @@ type(scope): описание
 
 Правила:
 
-- описание после типа и `scope` пишется на русском языке;
+- описание после типа и `scope` пишется только на английском языке;
+- subject и body commit message пишутся только на английском языке;
 - описание начинается со строчной буквы и формулируется в повелительном наклонении;
 - коммиты без Conventional Commits запрещены;
 - один коммит должен содержать одно логически связанное изменение;
@@ -32,26 +33,26 @@ type(scope): описание
 Примеры:
 
 ```text
-feat(downloads): добавить повторную загрузку задачи
-fix: исправить путь к иконке приложения
-docs: обновить правила разработки
+feat(downloads): add task retry
+fix: correct the application icon path
+docs: update development rules
 ```
 
 ## Pull Request
 
-Заголовок каждого PR обязан соответствовать формату Conventional Commits:
+Заголовок и описание каждого PR должны быть написаны только на английском языке и соответствовать формату Conventional Commits:
 
 ```text
-type(scope): описание
+type(scope): description
 ```
 
 В PR запрещены заголовки без допустимого типа, например `Update`, `Changes`, `WIP` или произвольное описание.
 
 PR обязан содержать:
 
-- краткое описание изменения;
-- причину изменения;
-- список выполненных проверок;
-- описание breaking changes, если они есть.
+- a short description of the change;
+- the reason for the change;
+- a list of completed checks;
+- a description of breaking changes, if any.
 
 Перед открытием PR необходимо проверить заголовок и все коммиты в ветке. Если коммиты не соответствуют Conventional Commits, их нужно исправить интерактивным rebase до создания PR.
