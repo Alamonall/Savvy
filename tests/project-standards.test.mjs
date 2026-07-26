@@ -115,6 +115,23 @@ test('секции настроек можно сворачивать незав
   assert.match(styles, /\.settings-group > summary/);
 });
 
+test('основные блоки очереди и модальные окна поддерживают тёмную тему', async () => {
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  for (const selector of [
+    '.task',
+    '.task-action',
+    '.task-url-toggle',
+    '.status.running',
+    '.status.done',
+    '.status.failed',
+    '.progress-track',
+    '.modal'
+  ]) {
+    assert.match(styles, new RegExp(`\\[data-theme='dark'\\] ${selector.replace('.', '\\.')}`));
+  }
+});
+
 test('дефолтный config yt-dlp встроен в приложение', async () => {
   const settingsService = await readFile(
     new URL('../src/main/services/settings.service.ts', import.meta.url),

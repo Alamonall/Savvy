@@ -1423,9 +1423,90 @@ label.settings-option {
   background: #374151;
 }
 
+[data-theme='dark'] .task-url-toggle,
+[data-theme='dark'] .task {
+  border-color: #4b5563;
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .task-url-toggle:hover,
+[data-theme='dark'] .task.selected,
+[data-theme='dark'] .task:hover {
+  border-color: #60a5fa;
+  background: #26364d;
+}
+
+[data-theme='dark'] .task-action {
+  border-color: #4b5563;
+  background: #374151;
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .task-action:hover {
+  background: #4b5563;
+  color: #ffffff;
+}
+
+[data-theme='dark'] .task-action.danger-action {
+  border-color: #991b1b;
+  background: #450a0a;
+  color: #fecaca;
+}
+
+[data-theme='dark'] .task-action.danger-action:hover {
+  background: #7f1d1d;
+  color: #fee2e2;
+}
+
+[data-theme='dark'] .task-title {
+  color: #f3f4f6;
+}
+
+[data-theme='dark'] .task-title + .task-url,
+[data-theme='dark'] .progress-value,
+[data-theme='dark'] .task-day-stat.total,
+[data-theme='dark'] .task-day-separator {
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .progress-track {
+  background: #374151;
+}
+
+[data-theme='dark'] .status.queued {
+  background: #374151;
+  color: #d1d5db;
+}
+
+[data-theme='dark'] .status.running {
+  background: #5b430e;
+  color: #fde68a;
+}
+
+[data-theme='dark'] .status.done {
+  background: #065f46;
+  color: #d1fae5;
+}
+
+[data-theme='dark'] .status.failed {
+  background: #7f1d1d;
+  color: #fee2e2;
+}
+
 [data-theme='dark'] .task-url-group-count {
   background: #374151;
   color: #d1d5db;
+}
+
+[data-theme='dark'] .modal {
+  border-color: #4b5563;
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .settings-group > summary::after {
+  color: #9ca3af;
 }
 
 [data-theme='dark'] .runtime-notice {
