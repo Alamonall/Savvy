@@ -28,6 +28,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "precommit": "eslint . --fix && prettier --write . && electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
     "quality:check": "npm run format:check && npm run lint && npm run typecheck",

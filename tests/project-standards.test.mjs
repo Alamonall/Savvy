@@ -21,6 +21,10 @@ test('скрипты качества кода доступны из package.jso
   assert.equal(packageJson.scripts.test, 'node --test tests/*.test.mjs');
   assert.equal(packageJson.scripts['lint:fix'], 'eslint . --fix');
   assert.equal(
+    packageJson.scripts.precommit,
+    'eslint . --fix && prettier --write . && electron-vite build'
+  );
+  assert.equal(
     packageJson.scripts['quality:check'],
     'npm run format:check && npm run lint && npm run typecheck'
   );
