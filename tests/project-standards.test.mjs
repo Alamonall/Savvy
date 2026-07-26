@@ -62,4 +62,64 @@ test('renderer поддерживает сохранённую тёмную те
   assert.match(renderer, /dataset\.theme/);
   assert.match(renderer, /Тёмная тема/);
   assert.match(styles, /\[data-theme='dark'\]/);
+  assert.match(styles, /\[data-theme='dark'\] \.settings-mode-tabs[\s\S]*background: #1f2937/);
+  assert.match(styles, /\[data-theme='dark'\] \.settings-mode-tabs[\s\S]*border-color: #374151/);
+});
+
+test('кнопки Eng раскрывают английский вариант настройки', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /data-original-text=/);
+  assert.match(renderer, /class="eng-help-text" hidden/);
+  assert.match(renderer, /querySelectorAll<HTMLButtonElement>\('\.eng-help'\)/);
+  assert.match(renderer, /setAttribute\('aria-expanded'/);
+});
+
+test('все настройки получают всплывающую подсказку с режимами и примером', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(renderer, /class="settings-help-button"/);
+  assert.match(renderer, /class="settings-help-tooltip"/);
+  assert.match(renderer, /Варианты:/);
+  assert.match(renderer, /Пример:/);
+  assert.match(styles, /\.settings-help:hover \.settings-help-tooltip/);
+  assert.match(styles, /\.settings-help-button/);
+});
+
+test('итоговая команда закреплена сверху и скрыта по умолчанию', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(renderer, /Унаследовано из yt-dlp/);
+  assert.match(renderer, /<details class="panel settings-panel command-preview-panel">/);
+  assert.match(renderer, /<summary class="command-preview-summary">/);
+  assert.doesNotMatch(renderer, /<details class="panel settings-panel command-preview-panel" open>/);
+  const settingsPanel = renderer.slice(renderer.indexOf('function renderSettingsPanel'));
+  assert.ok(settingsPanel.indexOf('command-preview-panel') < settingsPanel.indexOf('${renderSettingsModeTabs()}'));
+  assert.match(styles, /\.command-preview-panel\s*\{[\s\S]*position: sticky/);
+});
+
+test('дефолтный config yt-dlp встроен в приложение', async () => {
+  const settingsService = await readFile(
+    new URL('../src/main/services/settings.service.ts', import.meta.url),
+    'utf8'
+  );
+  const defaultConfig = await readFile(
+    new URL('../src/main/default-ytdlp-config.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(settingsService, /DEFAULT_YTDLP_CONFIG/);
+  assert.doesNotMatch(settingsService, /getYtdlpConfigCandidates|homedir\(\)|inheritedConfigPaths/);
+  assert.match(settingsService, /join\(app\.getPath\('userData'\), 'yt-dlp\.conf'\)/);
+  assert.match(settingsService, /inlineConfigText: configText/);
+  assert.match(settingsService, /inlineConfigText: undefined/);
+  assert.match(defaultConfig, /--merge-output-format/);
+  assert.match(defaultConfig, /--download-archive/);
+  assert.match(defaultConfig, /__SAVVY_DOWNLOAD_DIR__/);
+  assert.match(defaultConfig, /__SAVVY_DOWNLOAD_ARCHIVE__/);
+  assert.doesNotMatch(defaultConfig, /\/Users\/alamonall\/Videos/);
+  assert.match(settingsService, /app\.getPath\('downloads'\)/);
+  assert.match(settingsService, /\.yt-dlp-archive\.txt/);
 });

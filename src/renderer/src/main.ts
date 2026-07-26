@@ -90,7 +90,6 @@ let theme: Theme = readTheme();
 let settings: AppSettings = {
   downloadDir: '',
   maxConcurrentDownloads: 1,
-  inheritedConfigPaths: [],
   inlineConfigText: '',
   downloadDirectlyToSelectedFolder: false,
   extractAudio: false,
@@ -1194,8 +1193,57 @@ function renderSettingsModeTabs(): string {
   `;
 }
 
+function formatSettingValue(value: unknown): string {
+  if (value === '' || value === null || value === undefined) {
+    return 'режим по умолчанию yt-dlp';
+  }
+
+  return String(value);
+}
+
+function renderSettingVariants(option: SettingsOption): string {
+  if (option.kind === 'select') {
+    return option.options
+      .map(
+        (item) =>
+          `<div><strong>${escapeHtml(item.label)}</strong>: ${escapeHtml(item.value || 'режим по умолчанию yt-dlp')}</div>`
+      )
+      .join('');
+  }
+
+  if (option.kind === 'exclusive') {
+    return option.choices
+      .map((choice) => `<div><strong>${escapeHtml(choice.label)}</strong>: этот режим будет применён</div>`)
+      .join('');
+  }
+
+  return '';
+}
+
+function renderSettingHelp(option: SettingsOption): string {
+  const currentValue =
+    option.kind === 'exclusive' ? getExclusiveChoiceValue(option) : settings[option.key];
+  const currentText =
+    option.kind === 'checkbox'
+      ? currentValue
+        ? 'включено'
+        : 'выключено'
+      : formatSettingValue(currentValue);
+  const variants = renderSettingVariants(option);
+
+  return `<span class="settings-help">
+    <button class="settings-help-button" type="button" aria-label="Пояснение настройки">?</button>
+    <span class="settings-help-tooltip" role="tooltip">
+      <strong>Что делает:</strong> ${escapeHtml(option.description)}<br />
+      <strong>Сейчас:</strong> ${escapeHtml(currentText)}<br />
+      <strong>Пример:</strong> <code>${escapeHtml(option.original)}</code>
+      ${variants ? `<br /><strong>Варианты:</strong>${variants}` : ''}
+    </span>
+  </span>`;
+}
+
 function renderOriginalTextButton(option: SettingsOption): string {
-  return `<button class="eng-help" type="button" title="${escapeHtml(option.original)}" aria-label="Оригинальный текст опции">Eng</button>`;
+  return `<button class="eng-help" type="button" title="${escapeHtml(option.original)}" aria-label="Показать оригинальный текст опции" data-original-text="${escapeHtml(option.original)}" aria-expanded="false">Eng</button><span class="eng-help-text" hidden></span>${renderSettingHelp(option)}`;
 }
 
 function getExclusiveChoiceValue(option: Extract<SettingsOption, { kind: 'exclusive' }>): string {
@@ -1282,7 +1330,7 @@ function renderSettingsOption(option: SettingsOption): string {
   `;
 }
 
-function renderSettingsUiPanel(inheritedConfigText: string): string {
+function renderSettingsUiPanel(): string {
   return `
     <section class="settings-list">
       <datalist id="path-suggestions">
@@ -1304,14 +1352,7 @@ function renderSettingsUiPanel(inheritedConfigText: string): string {
           </section>
         `
       ).join('')}
-      <section class="panel settings-panel settings-list-panel">
-        <div class="section-head">
-          <h2>Унаследовано из yt-dlp</h2>
-          <span>config files</span>
-        </div>
-        <div class="inherited-box">
-          <ul>${inheritedConfigText}</ul>
-        </div>
+      <section class="panel settings-panel settings-list-panel settings-actions-panel">
         <button class="danger" id="clear-history" type="button">Очистить историю</button>
       </section>
     </section>
@@ -1398,24 +1439,23 @@ function refreshSettingsPanelView(): void {
 }
 
 function renderSettingsPanel(): string {
-  const inheritedConfigText = settings.inheritedConfigPaths.length
-    ? settings.inheritedConfigPaths.map((filePath) => `<li>${escapeHtml(filePath)}</li>`).join('')
-    : '<li>Конфиги yt-dlp не найдены</li>';
-
   return `
     <section class="settings-screen">
-      ${renderSettingsModeTabs()}
-      ${settingsMode === 'ui' ? renderSettingsUiPanel(inheritedConfigText) : renderSettingsTextPanel()}
-      <section class="panel settings-panel command-preview-panel">
-        <div class="section-head">
-          <h2>Итоговая команда</h2>
-          <span>Перед ссылкой</span>
-        </div>
+      <details class="panel settings-panel command-preview-panel">
+        <summary class="command-preview-summary">
+          <span>
+            <strong>Итоговая команда</strong>
+            <small>Перед ссылкой</small>
+          </span>
+          <span class="command-preview-hint">Показать</span>
+        </summary>
         <pre class="options-preview" id="effective-options-preview">${escapeHtml(
           effectiveOptionsPreview || 'Без дополнительных аргументов'
         )}</pre>
         ${settingsMessage ? `<p class="hint">${escapeHtml(settingsMessage)}</p>` : ''}
-      </section>
+      </details>
+      ${renderSettingsModeTabs()}
+      ${settingsMode === 'ui' ? renderSettingsUiPanel() : renderSettingsTextPanel()}
     </section>
   `;
 }
@@ -1755,7 +1795,7 @@ function render(): void {
     <main class="shell">
       <header class="topbar">
         <div class="app-brand">
-          <img class="app-brand-icon" src="/savvy.png" alt="" />
+          <img class="app-brand-icon" src="./savvy.png" alt="" />
           <div>
             <h1>Savvy</h1>
             <p>Очередь скачивания через локально установленный yt-dlp</p>
@@ -1839,6 +1879,30 @@ function bindSettingsEvents(): void {
       if (key) {
         void updateLocalSettings({ [key]: checkbox.checked } as Partial<AppSettings>);
       }
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('.eng-help').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const text = button.nextElementSibling;
+      if (!(text instanceof HTMLElement)) {
+        return;
+      }
+
+      const isExpanded = button.getAttribute('aria-expanded') === 'true';
+      text.textContent = isExpanded ? '' : button.dataset.originalText ?? '';
+      text.hidden = isExpanded;
+      button.setAttribute('aria-expanded', String(!isExpanded));
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('.settings-help-button').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
     });
   });
 
@@ -2520,8 +2584,7 @@ async function initializeApp(): Promise<void> {
     const mainSettings = await window.ytdlp.getSettings();
     settings = {
       ...settings,
-      ...mainSettings,
-      inheritedConfigPaths: mainSettings.inheritedConfigPaths
+      ...mainSettings
     };
     effectiveOptionsPreview = await window.ytdlp.getEffectiveOptionsPreview();
     queue = await window.ytdlp.getQueue();

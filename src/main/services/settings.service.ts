@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AppSettings } from '../../shared/types';
+import { DEFAULT_YTDLP_CONFIG } from '../default-ytdlp-config';
 import { BinaryLocatorService } from './binary-locator.service';
 
 const require = createRequire(import.meta.url);
@@ -19,16 +19,22 @@ export class SettingsService {
   ) {}
 
   init(): void {
-    const inheritedSettings = this.inheritYtdlpConfig(this.createDefaultSettings());
+    const configText = this.loadAppConfigText();
+    const defaultSettings = this.applyYtdlpConfigArgs(
+      { ...this.createDefaultSettings(), inlineConfigText: configText },
+      this.parseYtdlpConfigText(configText)
+    );
     const persistedSettings = this.loadPersistedSettings();
 
     this.settings = persistedSettings
       ? {
-          ...inheritedSettings,
+          ...defaultSettings,
           ...persistedSettings,
-          inheritedConfigPaths: inheritedSettings.inheritedConfigPaths
+          inlineConfigText: configText
         }
-      : inheritedSettings;
+      : defaultSettings;
+
+    this.writeAppConfigText(this.settings.inlineConfigText);
   }
 
   get(): AppSettings {
@@ -43,7 +49,6 @@ export class SettingsService {
     const normalizedSettings: AppSettings = {
       ...currentSettings,
       ...nextSettings,
-      inheritedConfigPaths: currentSettings.inheritedConfigPaths,
       downloadDir: nextSettings.downloadDir.trim() || currentSettings.downloadDir,
       maxConcurrentDownloads: Number.isFinite(maxConcurrentDownloads)
         ? Math.max(1, Math.min(8, Math.floor(maxConcurrentDownloads)))
@@ -150,7 +155,6 @@ export class SettingsService {
 
     return this.update({
       ...this.applyYtdlpConfigArgs(currentSettings, parsedArgs),
-      inheritedConfigPaths: currentSettings.inheritedConfigPaths,
       inlineConfigText: configText.trim()
     });
   }
@@ -159,8 +163,7 @@ export class SettingsService {
     return {
       downloadDir: app.getPath('downloads'),
       maxConcurrentDownloads: 1,
-      inheritedConfigPaths: [],
-      inlineConfigText: '',
+      inlineConfigText: this.getDefaultConfigText(),
       downloadDirectlyToSelectedFolder: false,
       extractAudio: false,
       audioFormat: 'mp3',
@@ -189,7 +192,7 @@ export class SettingsService {
       dateAfter: '',
       dateBefore: '',
       matchFilter: '',
-      downloadArchive: '',
+      downloadArchive: join(app.getPath('downloads'), '.yt-dlp-archive.txt'),
       cookiesFile: '',
       netrc: false,
       netrcLocation: '',
@@ -507,26 +510,12 @@ export class SettingsService {
     }
 
     mkdirSync(app.getPath('userData'), { recursive: true });
-    writeFileSync(this.getSettingsPath(), JSON.stringify(this.settings, null, 2), 'utf8');
-  }
-
-  private getYtdlpConfigCandidates(): string[] {
-    const homeDir = homedir();
-    const xdgConfigHome = process.env.XDG_CONFIG_HOME || join(homeDir, '.config');
-
-    return [
-      '/etc/yt-dlp.conf',
-      '/etc/yt-dlp/config',
-      join(xdgConfigHome, 'yt-dlp', 'config'),
-      join(xdgConfigHome, 'yt-dlp.conf'),
-      join(homeDir, '.yt-dlp', 'config'),
-      join(homeDir, '.yt-dlp.conf')
-    ];
-  }
-
-  private parseYtdlpConfigFile(filePath: string): string[] {
-    const file = readFileSync(filePath, 'utf8');
-    return this.parseYtdlpConfigText(file);
+    writeFileSync(
+      this.getSettingsPath(),
+      JSON.stringify({ ...this.settings, inlineConfigText: undefined }, null, 2),
+      'utf8'
+    );
+    this.writeAppConfigText(this.settings.inlineConfigText);
   }
 
   private parseYtdlpConfigText(configText: string): string[] {
@@ -586,27 +575,42 @@ export class SettingsService {
     return nextSettings;
   }
 
-  private inheritYtdlpConfig(baseSettings: AppSettings): AppSettings {
-    const existingConfigPaths = this.getYtdlpConfigCandidates().filter((filePath) =>
-      existsSync(filePath)
-    );
-    let inheritedSettings = {
-      ...baseSettings,
-      inheritedConfigPaths: existingConfigPaths
-    };
-
-    for (const filePath of existingConfigPaths) {
-      inheritedSettings = this.applyYtdlpConfigArgs(
-        inheritedSettings,
-        this.parseYtdlpConfigFile(filePath)
-      );
-    }
-
-    return inheritedSettings;
+  private getInlineConfigPath(): string {
+    return join(app.getPath('userData'), 'yt-dlp.conf');
   }
 
-  private getInlineConfigPath(): string {
-    return join(app.getPath('userData'), 'inline-yt-dlp.conf');
+  private getDefaultConfigText(): string {
+    const downloadDirectory = this.formatConfigPath(app.getPath('downloads'));
+    const downloadArchive = this.formatConfigPath(
+      join(app.getPath('downloads'), '.yt-dlp-archive.txt')
+    );
+
+    return DEFAULT_YTDLP_CONFIG.replaceAll('__SAVVY_DOWNLOAD_DIR__', downloadDirectory).replaceAll(
+      '__SAVVY_DOWNLOAD_ARCHIVE__',
+      downloadArchive
+    );
+  }
+
+  private formatConfigPath(path: string): string {
+    const normalizedPath = path.replaceAll('\\', '/');
+    return /\s/.test(normalizedPath) ? `"${normalizedPath}"` : normalizedPath;
+  }
+
+  private loadAppConfigText(): string {
+    const configPath = this.getInlineConfigPath();
+
+    if (existsSync(configPath)) {
+      return readFileSync(configPath, 'utf8').trim();
+    }
+
+    const defaultConfigText = this.getDefaultConfigText();
+    this.writeAppConfigText(defaultConfigText);
+    return defaultConfigText.trim();
+  }
+
+  private writeAppConfigText(configText: string): void {
+    mkdirSync(app.getPath('userData'), { recursive: true });
+    writeFileSync(this.getInlineConfigPath(), `${configText.trim()}\n`, 'utf8');
   }
 
   private writeInlineConfigIfNeeded(): string | null {
