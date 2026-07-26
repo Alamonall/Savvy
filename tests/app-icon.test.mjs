@@ -24,11 +24,11 @@ test('application uses the circular Savvy icon everywhere', async () => {
     await readFile(new URL('../package.json', import.meta.url), 'utf8')
   );
 
-  assert.match(rendererHtml, /savvy\.png/);
+  assert.match(rendererHtml, /href="\.\/savvy\.png"/);
   assert.match(electronApplication, /savvy\.png/);
   assert.match(electronApplication, /dock\.setIcon/);
   assert.doesNotMatch(electronApplication, /savvy-pirate-dock\.png/);
-  assert.match(rendererMain, /class="app-brand-icon"[^>]+savvy\.png/);
+  assert.match(rendererMain, /class="app-brand-icon"[^>]+\.\/savvy\.png/);
   assert.equal(packageJson.build.mac.icon, 'src/renderer/public/savvy.icns');
   await access(new URL('../src/renderer/public/savvy.icns', import.meta.url));
   assert.equal(packageJson.build.linux.icon, 'src/renderer/public/savvy.png');

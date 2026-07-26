@@ -26,8 +26,8 @@ export interface AddDownloadPayload {
 export interface AppSettings {
   downloadDir: string;
   maxConcurrentDownloads: number;
-  inheritedConfigPaths: string[];
   inlineConfigText: string;
+  customizedOptionKeys: string[];
   downloadDirectlyToSelectedFolder: boolean;
   extractAudio: boolean;
   audioFormat: string;
