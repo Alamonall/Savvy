@@ -1210,22 +1210,8 @@ label.settings-option {
   line-height: 1.4;
 }
 
-.task-log-container {
-  display: grid;
-  grid-column: 1 / -1;
-  gap: 6px;
-}
-
-.task-log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #667085;
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .task-log {
+  grid-column: 1 / -1;
   max-height: 260px;
   margin: 2px 0 0;
   overflow: auto;
@@ -1544,10 +1530,6 @@ label.settings-option {
 
 [data-theme='dark'] .task-title {
   color: #f3f4f6;
-}
-
-[data-theme='dark'] .task-log-header {
-  color: #9ca3af;
 }
 
 [data-theme='dark'] .task-title + .task-url,

@@ -179,8 +179,8 @@ test('повторный клик по задаче сворачивает её 
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
   assert.match(renderer, /selectedTaskId === button\.dataset\.taskId \? null : button\.dataset\.taskId \?\? null/);
-  assert.match(renderer, /data-close-log="\$\{task\.id\}"/);
-  assert.match(renderer, /selectedTaskId === taskId \? null : taskId/);
+  assert.match(renderer, /refreshQueueView\(\);/);
+  assert.doesNotMatch(renderer, /data-close-log/);
 });
 
 test('клик по группе повторных попыток переключает группу и закрывает лог', async () => {

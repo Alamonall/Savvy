@@ -1036,23 +1036,17 @@ function renderTaskLog(task: DownloadTask): string {
   const logText = task.log.length ? task.log.slice(-120).join('\n') : 'Лог пока пуст.';
 
   return `
-    <div class="task-log-container">
-      <div class="task-log-header">
-        <span>Лог</span>
-        <button class="task-action" data-close-log="${task.id}" type="button">Свернуть</button>
-      </div>
-      <pre class="task-log" aria-label="Лог задачи">${escapeHtml(
-        [
-          `Ссылка: ${task.url}`,
-          `Название: ${task.title || task.url}`,
-          `Папка: ${task.downloadDir}`,
-          `Аргументы: ${task.optionsText || 'без дополнительных аргументов'}`,
-          ...(task.userMessage ? ['', `Причина: ${task.userMessage}`] : []),
-          '',
-          logText
-        ].join('\n')
-      )}</pre>
-    </div>
+    <pre class="task-log" aria-label="Лог задачи">${escapeHtml(
+      [
+        `Ссылка: ${task.url}`,
+        `Название: ${task.title || task.url}`,
+        `Папка: ${task.downloadDir}`,
+        `Аргументы: ${task.optionsText || 'без дополнительных аргументов'}`,
+        ...(task.userMessage ? ['', `Причина: ${task.userMessage}`] : []),
+        '',
+        logText
+      ].join('\n')
+    )}</pre>
   `;
 }
 
@@ -1927,8 +1921,9 @@ function refreshQueueView(): void {
   }
 
   const visibleQueue = getVisibleQueue();
-  const selectedTask =
-    queue.find((task) => task.id === selectedTaskId) ?? visibleQueue.at(0) ?? queue.at(0) ?? null;
+  const selectedTask = selectedTaskId
+    ? (queue.find((task) => task.id === selectedTaskId) ?? null)
+    : null;
   const previousScrollTop = taskList.scrollTop;
 
   queueCount.textContent = formatQueueCount(visibleQueue);
@@ -1972,8 +1967,9 @@ function toggleTheme(): void {
 
 function render(): void {
   const visibleQueue = getVisibleQueue();
-  const selectedTask =
-    queue.find((task) => task.id === selectedTaskId) ?? visibleQueue.at(0) ?? queue.at(0) ?? null;
+  const selectedTask = selectedTaskId
+    ? (queue.find((task) => task.id === selectedTaskId) ?? null)
+    : null;
 
   appRoot.innerHTML = `
     <main class="shell">
@@ -2233,7 +2229,7 @@ function bindQueueTaskEvents(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-task-id]').forEach((button) => {
     button.addEventListener('click', () => {
       selectedTaskId = selectedTaskId === button.dataset.taskId ? null : button.dataset.taskId ?? null;
-      render();
+      refreshQueueView();
     });
   });
 
@@ -2259,16 +2255,7 @@ function bindQueueTaskEvents(): void {
     button.addEventListener('click', () => {
       const taskId = button.dataset.openLog ?? null;
       selectedTaskId = selectedTaskId === taskId ? null : taskId;
-      render();
-    });
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('[data-close-log]').forEach((button) => {
-    button.addEventListener('click', () => {
-      if (selectedTaskId === button.dataset.closeLog) {
-        selectedTaskId = null;
-      }
-      render();
+      refreshQueueView();
     });
   });
 
