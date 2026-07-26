@@ -164,6 +164,7 @@ export class SettingsService {
       downloadDir: app.getPath('downloads'),
       maxConcurrentDownloads: 1,
       inlineConfigText: this.getDefaultConfigText(),
+      customizedOptionKeys: [],
       downloadDirectlyToSelectedFolder: false,
       extractAudio: false,
       audioFormat: 'mp3',

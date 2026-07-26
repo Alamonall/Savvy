@@ -27,6 +27,7 @@ export interface AppSettings {
   downloadDir: string;
   maxConcurrentDownloads: number;
   inlineConfigText: string;
+  customizedOptionKeys: string[];
   downloadDirectlyToSelectedFolder: boolean;
   extractAudio: boolean;
   audioFormat: string;

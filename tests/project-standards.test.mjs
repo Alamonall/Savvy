@@ -132,6 +132,79 @@ test('основные блоки очереди и модальные окна 
   }
 });
 
+test('cookie-настройки отображаются только для выбранного источника', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /function isSettingsOptionVisible\(option: SettingsOption\)/);
+  assert.match(renderer, /cookiesFromBrowser.*browser/);
+  assert.match(renderer, /cookiesFile.*file/);
+  assert.match(renderer, /isSettingsOptionVisible\(option\)/);
+});
+
+test('настройки можно искать через закреплённое поле сверху', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(renderer, /id="settings-search"/);
+  assert.match(renderer, /function isSettingsOptionMatching\(option: SettingsOption, query: string\)/);
+  assert.match(renderer, /settingsSearchQuery = input.value/);
+  assert.match(styles, /\.settings-search-panel\s*\{[\s\S]*position: sticky/);
+});
+
+test('группа URL получает название успешной загрузки', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /status === 'done' && task\.title/);
+  assert.match(renderer, /successfulTask/);
+});
+
+test('повторный клик по задаче сворачивает её лог', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /selectedTaskId === button\.dataset\.taskId \? null : button\.dataset\.taskId \?\? null/);
+});
+
+test('клик по группе повторных попыток переключает группу и закрывает лог', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /data-url-group-toggle/);
+  assert.match(renderer, /expandedUrlGroups\[groupKey\]/);
+  assert.match(renderer, /selectedTaskId = null/);
+});
+
+test('загрузки сортируются от самых свежих к старым', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /rightTask\.createdAt - leftTask\.createdAt/);
+});
+
+test('предупреждает о незаполненном источнике cookies', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(renderer, /Опция не будет применена, пока не выбран браузер/);
+  assert.match(renderer, /Опция не будет применена, пока не выбран файл/);
+  assert.match(styles, /\.settings-warning/);
+});
+
+test('предупреждение cookies обновляется после выбора браузера или файла', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /key === 'cookiesFromBrowser' \|\| key === 'cookiesFile'/);
+  assert.match(renderer, /updatePromise\.then\(\(\) => render\(\)\)/);
+});
+
+test('нетронутые настройки помечаются как raw', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const sharedTypes = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(sharedTypes, /customizedOptionKeys: string\[\]/);
+  assert.match(renderer, /function renderRawOptionLabel\(option: SettingsOption\)/);
+  assert.match(renderer, /customizedOptionKeys/);
+  assert.match(styles, /\.settings-option-raw/);
+});
+
 test('дефолтный config yt-dlp встроен в приложение', async () => {
   const settingsService = await readFile(
     new URL('../src/main/services/settings.service.ts', import.meta.url),

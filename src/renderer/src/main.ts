@@ -65,9 +65,11 @@ const COLLAPSED_DAYS_KEY = 'ytdlp-collapsed-days';
 const COLLAPSED_SETTINGS_SECTIONS_KEY = 'ytdlp-collapsed-settings-sections';
 const EXPANDED_URL_GROUPS_KEY = 'ytdlp-expanded-url-groups';
 const CONFIG_VERSIONS_KEY = 'ytdlp-config-versions';
+const COOKIES_SOURCE_KEY = 'ytdlp-cookies-source';
 const THEME_KEY = 'ytdlp-theme';
 
 type Theme = 'light' | 'dark';
+type CookiesSource = 'none' | 'browser' | 'file';
 
 let currentTab: Tab = 'queue';
 let settingsMode: SettingsMode = 'ui';
@@ -89,10 +91,13 @@ let collapsedSettingsSections = readCollapsedSettingsSections();
 let expandedUrlGroups = readExpandedUrlGroups();
 let folderPicker: FolderPickerState | null = null;
 let theme: Theme = readTheme();
+let cookiesSource: CookiesSource = readCookiesSource();
+let settingsSearchQuery = '';
 let settings: AppSettings = {
   downloadDir: '',
   maxConcurrentDownloads: 1,
   inlineConfigText: '',
+  customizedOptionKeys: [],
   downloadDirectlyToSelectedFolder: false,
   extractAudio: false,
   audioFormat: 'mp3',
@@ -1276,10 +1281,64 @@ function renderOriginalTextButton(option: SettingsOption): string {
   return `<button class="eng-help" type="button" title="${escapeHtml(option.original)}" aria-label="Показать оригинальный текст опции" data-original-text="${escapeHtml(option.original)}" aria-expanded="false">Eng</button><span class="eng-help-text" hidden></span>${renderSettingHelp(option)}`;
 }
 
+function renderRawOptionLabel(option: SettingsOption): string {
+  const optionKey = option.kind === 'exclusive' ? option.id : String(option.key);
+  return settings.customizedOptionKeys.includes(optionKey)
+    ? ''
+    : '<span class="settings-option-raw">raw</span>';
+}
+
 function getExclusiveChoiceValue(option: Extract<SettingsOption, { kind: 'exclusive' }>): string {
+  if (option.id === 'cookies-source') {
+    return cookiesSource;
+  }
+
   return (
     option.choices.find((choice) => choice.isActive(settings))?.value ?? option.choices[0].value
   );
+}
+
+function isSettingsOptionVisible(option: SettingsOption): boolean {
+  if (option.kind === 'exclusive') {
+    return true;
+  }
+
+  if (option.key === 'cookiesFromBrowser') {
+    return cookiesSource === 'browser';
+  }
+
+  if (option.key === 'cookiesFile') {
+    return cookiesSource === 'file';
+  }
+
+  return true;
+}
+
+function isSettingsOptionMatching(option: SettingsOption, query: string): boolean {
+  if (!query) {
+    return true;
+  }
+
+  const searchableText = [
+    option.label,
+    option.description,
+    option.original,
+    ...(option.kind === 'select' ? option.options.map((item) => `${item.label} ${item.value}`) : []),
+    ...(option.kind === 'exclusive' ? option.choices.map((item) => `${item.label} ${item.value}`) : [])
+  ]
+    .join(' ')
+    .toLocaleLowerCase();
+
+  return searchableText.includes(query);
+}
+
+function renderSettingsSearch(): string {
+  return `
+    <div class="panel settings-search-panel">
+      <label for="settings-search">Поиск по настройкам</label>
+      <input id="settings-search" type="search" value="${escapeHtml(settingsSearchQuery)}" placeholder="Например: cookies, формат, субтитры" autocomplete="off" />
+    </div>
+  `;
 }
 
 function renderSelectOptions(
@@ -1294,6 +1353,22 @@ function renderSelectOptions(
     .join('');
 }
 
+function renderCookiesSourceWarning(option: Extract<SettingsOption, { kind: 'exclusive' }>): string {
+  if (option.id !== 'cookies-source') {
+    return '';
+  }
+
+  if (cookiesSource === 'browser' && !settings.cookiesFromBrowser.trim()) {
+    return '<p class="settings-warning">Опция не будет применена, пока не выбран браузер.</p>';
+  }
+
+  if (cookiesSource === 'file' && !settings.cookiesFile.trim()) {
+    return '<p class="settings-warning">Опция не будет применена, пока не выбран файл.</p>';
+  }
+
+  return '';
+}
+
 function renderSettingsOption(option: SettingsOption): string {
   if (option.kind === 'exclusive') {
     return `
@@ -1301,10 +1376,12 @@ function renderSettingsOption(option: SettingsOption): string {
         <div class="settings-option-copy">
           <label class="settings-option-title" for="setting-exclusive-${option.id}">${escapeHtml(option.label)} ${renderOriginalTextButton(option)}</label>
           <span class="settings-option-description">${escapeHtml(option.description)}</span>
+          ${renderRawOptionLabel(option)}
         </div>
         <select id="setting-exclusive-${option.id}" data-setting-exclusive="${option.id}">
           ${renderSelectOptions(option.choices, getExclusiveChoiceValue(option))}
         </select>
+        ${renderCookiesSourceWarning(option)}
       </div>
     `;
   }
@@ -1318,6 +1395,7 @@ function renderSettingsOption(option: SettingsOption): string {
         <span class="settings-option-copy">
           <span class="settings-option-title">${escapeHtml(option.label)} ${renderOriginalTextButton(option)}</span>
           <span class="settings-option-description">${escapeHtml(option.description)}</span>
+          ${renderRawOptionLabel(option)}
         </span>
       </label>
     `;
@@ -1329,6 +1407,7 @@ function renderSettingsOption(option: SettingsOption): string {
         <div class="settings-option-copy">
           <label class="settings-option-title" for="setting-${String(option.key)}">${escapeHtml(option.label)} ${renderOriginalTextButton(option)}</label>
           <span class="settings-option-description">${escapeHtml(option.description)}</span>
+          ${renderRawOptionLabel(option)}
         </div>
         <select id="setting-${String(option.key)}" data-setting-input="${String(option.key)}">
           ${renderSelectOptions(option.options, String(value ?? ''))}
@@ -1347,6 +1426,7 @@ function renderSettingsOption(option: SettingsOption): string {
       <div class="settings-option-copy">
         <label class="settings-option-title" for="setting-${String(option.key)}">${escapeHtml(option.label)} ${renderOriginalTextButton(option)}</label>
         <span class="settings-option-description">${escapeHtml(option.description)}</span>
+        ${renderRawOptionLabel(option)}
       </div>
       <div class="${option.kind === 'path' ? 'settings-path-row' : ''}">
         <input id="setting-${String(option.key)}" data-setting-input="${String(option.key)}" type="${inputType}" value="${escapeHtml(String(value ?? ''))}" placeholder="${escapeHtml(option.placeholder ?? '')}"${min}${max}${pathDatalist} />
@@ -1361,27 +1441,39 @@ function renderSettingsOption(option: SettingsOption): string {
 }
 
 function renderSettingsUiPanel(): string {
+  const query = settingsSearchQuery.trim().toLocaleLowerCase();
+  const renderedGroups = SETTINGS_OPTION_GROUPS.map((group, index) => {
+    const visibleOptions = group.options.filter(
+      (option) => isSettingsOptionVisible(option) && isSettingsOptionMatching(option, query)
+    );
+
+    if (!visibleOptions.length) {
+      return '';
+    }
+
+    return `
+      <details class="panel settings-panel settings-list-panel settings-group" data-settings-section="${index}" ${query || !collapsedSettingsSections.has(index) ? 'open' : ''}>
+        <summary class="section-head">
+          <h2>${escapeHtml(group.title)}</h2>
+          <span>${query ? `${visibleOptions.length} из ` : ''}${group.options.length} опций</span>
+        </summary>
+        <div class="settings-options">
+          ${visibleOptions.map((option) => renderSettingsOption(option)).join('')}
+        </div>
+      </details>
+    `;
+  }).join('');
+
   return `
     <section class="settings-list">
+      ${renderSettingsSearch()}
       <datalist id="path-suggestions">
         <option value="${escapeHtml(settings.downloadDir)}"></option>
         <option value="~/Downloads"></option>
         <option value="~/Desktop"></option>
         <option value="/tmp"></option>
       </datalist>
-      ${SETTINGS_OPTION_GROUPS.map(
-        (group, index) => `
-          <details class="panel settings-panel settings-list-panel settings-group" data-settings-section="${index}" ${collapsedSettingsSections.has(index) ? '' : 'open'}>
-            <summary class="section-head">
-              <h2>${escapeHtml(group.title)}</h2>
-              <span>${group.options.length} опций</span>
-            </summary>
-            <div class="settings-options">
-              ${group.options.map((option) => renderSettingsOption(option)).join('')}
-            </div>
-          </details>
-        `
-      ).join('')}
+      ${renderedGroups || '<p class="settings-search-empty">Ничего не найдено.</p>'}
       <section class="panel settings-panel settings-list-panel settings-actions-panel">
         <button class="danger" id="clear-history" type="button">Очистить историю</button>
       </section>
@@ -1429,10 +1521,36 @@ function renderSettingsTextPanel(): string {
   `;
 }
 
+function getCustomizedOptionKeys(partialSettings: Partial<AppSettings>): string[] {
+  const customizedKeys = new Set(settings.customizedOptionKeys ?? []);
+  const changedKeys = new Set(Object.keys(partialSettings));
+
+  SETTINGS_OPTION_GROUPS.flatMap((group) => group.options).forEach((option) => {
+    const optionKey = option.kind === 'exclusive' ? option.id : String(option.key);
+    const isDirectlyChanged = changedKeys.has(optionKey);
+    const isChoiceChanged =
+      option.kind === 'exclusive' &&
+      option.choices.some((choice) => Object.keys(choice.patch).some((key) => changedKeys.has(key)));
+
+    if (isDirectlyChanged || isChoiceChanged) {
+      customizedKeys.add(optionKey);
+    }
+  });
+
+  if (partialSettings.inlineConfigText !== undefined) {
+    SETTINGS_OPTION_GROUPS.flatMap((group) => group.options).forEach((option) => {
+      customizedKeys.add(option.kind === 'exclusive' ? option.id : String(option.key));
+    });
+  }
+
+  return [...customizedKeys];
+}
+
 async function updateLocalSettings(partialSettings: Partial<AppSettings>): Promise<void> {
   const nextSettings: AppSettings = {
     ...settings,
     ...partialSettings,
+    customizedOptionKeys: getCustomizedOptionKeys(partialSettings),
     maxConcurrentDownloads: Math.max(
       1,
       Math.min(
@@ -1573,16 +1691,19 @@ function groupQueueByDay(tasks: DownloadTask[]): Array<{
   return [...groups.entries()]
     .sort(([leftDayKey], [rightDayKey]) => rightDayKey.localeCompare(leftDayKey))
     .map(([dayKey, groupedTasks]) => {
-      const doneCount = groupedTasks.filter((task) => task.status === 'done').length;
-      const failedCount = groupedTasks.filter((task) => task.status === 'failed').length;
+      const sortedTasks = [...groupedTasks].sort(
+        (leftTask, rightTask) => rightTask.createdAt - leftTask.createdAt
+      );
+      const doneCount = sortedTasks.filter((task) => task.status === 'done').length;
+      const failedCount = sortedTasks.filter((task) => task.status === 'failed').length;
 
       return {
         dayKey,
         label: formatDayLabel(dayKey),
-        tasks: groupedTasks,
+        tasks: sortedTasks,
         doneCount,
         failedCount,
-        totalCount: groupedTasks.length
+        totalCount: sortedTasks.length
       };
     });
 }
@@ -1641,6 +1762,14 @@ function getUrlGroupStatus(tasks: DownloadTask[]): DownloadTask['status'] {
   return 'done';
 }
 
+function getUrlGroupTitle(url: string, tasks: DownloadTask[]): string {
+  const successfulTask = tasks.find(
+    (task) => task.status === 'done' && task.title && task.title !== task.url
+  );
+
+  return successfulTask?.title ?? tasks.find((task) => task.title)?.title ?? url;
+}
+
 function renderUrlTaskGroupMarkup(
   dayKey: string,
   url: string,
@@ -1650,7 +1779,7 @@ function renderUrlTaskGroupMarkup(
   const groupKey = getUrlGroupKey(dayKey, url);
   const isExpanded = expandedUrlGroups[groupKey] === true;
   const status = getUrlGroupStatus(tasks);
-  const title = tasks.find((task) => task.title)?.title ?? url;
+  const title = getUrlGroupTitle(url, tasks);
 
   return `
     <div class="task-url-group">
@@ -1804,6 +1933,11 @@ function readTheme(): Theme {
   return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
 }
 
+function readCookiesSource(): CookiesSource {
+  const savedSource = localStorage.getItem(COOKIES_SOURCE_KEY);
+  return savedSource === 'browser' || savedSource === 'file' ? savedSource : 'none';
+}
+
 function applyTheme(): void {
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.colorScheme = theme;
@@ -1895,6 +2029,16 @@ function render(): void {
 }
 
 function bindSettingsEvents(): void {
+  document.querySelector<HTMLInputElement>('#settings-search')?.addEventListener('input', (event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const cursorPosition = input.selectionStart ?? input.value.length;
+    settingsSearchQuery = input.value;
+    render();
+    const nextInput = document.querySelector<HTMLInputElement>('#settings-search');
+    nextInput?.focus();
+    nextInput?.setSelectionRange(cursorPosition, cursorPosition);
+  });
+
   document.querySelectorAll<HTMLButtonElement>('[data-settings-mode]').forEach((button) => {
     button.addEventListener('click', () => {
       settingsMode = button.dataset.settingsMode as SettingsMode;
@@ -1965,7 +2109,10 @@ function bindSettingsEvents(): void {
           input instanceof HTMLInputElement && input.type === 'number'
             ? Math.floor(Number(input.value || '0'))
             : input.value;
-        void updateLocalSettings({ [key]: value } as Partial<AppSettings>);
+        const updatePromise = updateLocalSettings({ [key]: value } as Partial<AppSettings>);
+        if (key === 'cookiesFromBrowser' || key === 'cookiesFile') {
+          void updatePromise.then(() => render());
+        }
       });
     });
 
@@ -1978,7 +2125,13 @@ function bindSettingsEvents(): void {
       const choice = option?.choices.find((item) => item.value === select.value);
 
       if (choice) {
-        void updateLocalSettings(choice.patch);
+        if (select.dataset.settingExclusive === 'cookies-source') {
+          cookiesSource = select.value as CookiesSource;
+          localStorage.setItem(COOKIES_SOURCE_KEY, cookiesSource);
+          void updateLocalSettings(choice.patch).then(() => render());
+        } else {
+          void updateLocalSettings(choice.patch);
+        }
       }
     });
   });
@@ -2059,7 +2212,7 @@ function bindConfigModalEvents(): void {
 function bindQueueTaskEvents(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-task-id]').forEach((button) => {
     button.addEventListener('click', () => {
-      selectedTaskId = button.dataset.taskId ?? null;
+      selectedTaskId = selectedTaskId === button.dataset.taskId ? null : button.dataset.taskId ?? null;
       render();
     });
   });
@@ -2136,6 +2289,7 @@ function bindQueueGroupEvents(): void {
         ...expandedUrlGroups,
         [groupKey]: !expandedUrlGroups[groupKey]
       };
+      selectedTaskId = null;
       saveExpandedUrlGroups();
       refreshQueueView();
     });
@@ -2632,6 +2786,9 @@ async function initializeApp(): Promise<void> {
       ...settings,
       ...mainSettings
     };
+    if (!localStorage.getItem(COOKIES_SOURCE_KEY)) {
+      cookiesSource = settings.cookiesFromBrowser ? 'browser' : settings.cookiesFile ? 'file' : 'none';
+    }
     effectiveOptionsPreview = await window.ytdlp.getEffectiveOptionsPreview();
     queue = await window.ytdlp.getQueue();
   } catch (error) {
