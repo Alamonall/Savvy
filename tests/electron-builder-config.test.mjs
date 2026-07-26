@@ -25,3 +25,14 @@ test('electron-builder publishes mac update metadata to the nightly channel', ()
 test('mac release keeps the zip target required by electron-updater', () => {
   assert.deepEqual(packageJson.build.mac.target, ['dmg', 'zip']);
 });
+
+test('packaged application includes the downloaded yt-dlp binary', () => {
+  assert.equal(packageJson.scripts['prepare:ytdlp'], 'node scripts/download-ytdlp.mjs');
+  assert.match(packageJson.scripts.dist, /npm run prepare:ytdlp/);
+  assert.match(packageJson.scripts['dist:linux'], /npm run prepare:ytdlp/);
+  assert.match(packageJson.scripts['dist:mac'], /npm run prepare:ytdlp/);
+  assert.match(packageJson.scripts['dist:windows'], /npm run prepare:ytdlp/);
+  assert.match(packageJson.scripts.publish, /npm run prepare:ytdlp/);
+  assert.match(packageJson.scripts['publish:mac'], /npm run prepare:ytdlp/);
+  assert.deepEqual(packageJson.build.extraResources, [{ from: 'build/ytdlp', to: 'bin' }]);
+});
