@@ -163,10 +163,14 @@ test('настройки можно искать через закреплённ
   assert.match(styles, /\.settings-search-panel\s*\{[\s\S]*position: sticky/);
 });
 
-test('группа URL получает название успешной загрузки', async () => {
+test('группа URL отдаёт приоритет имени успешной загрузки', async () => {
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
-  assert.match(renderer, /status === 'done' && task\.title/);
+  assert.match(
+    renderer,
+    /function getUrlGroupTitle\(url: string, tasks: DownloadTask\[\]\): string/
+  );
+  assert.match(renderer, /task\.status === 'done' && task\.title && task\.title !== task\.url/);
   assert.match(renderer, /successfulTask/);
 });
 
@@ -178,9 +182,21 @@ test('успешная попытка определяет статус груп
     renderer,
     /if \(tasks\.some\(\(task\) => task\.status === 'done'\)\) \{[\s\S]*return 'done';/
   );
-  assert.match(renderer, /successfulTask \? renderTaskActions\(successfulTask\) : ''/);
+  assert.match(renderer, /actionableTask \? renderTaskActions\(actionableTask\) : ''/);
   assert.match(renderer, /class="task task-url-group-header"/);
   assert.match(styles, /\.task-url-group-header:has\(\.task-url-toggle:hover\)/);
+});
+
+test('имя ролика фиксируется при первом обнаружении и становится именем группы повторов', async () => {
+  const downloadsService = await readFile(
+    new URL('../src/main/services/downloads.service.ts', import.meta.url),
+    'utf8'
+  );
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(downloadsService, /if \(title && task\.title === task\.url\) \{/);
+  assert.match(downloadsService, /url: originalTask\.url,[\s\S]*title: originalTask\.url,/);
+  assert.match(renderer, /successfulTask\?\.title[\s\S]*tasks\.find/);
 });
 
 test('UI-элементы переиспользуют общий стиль', async () => {
@@ -196,6 +212,30 @@ test('повторный клик по задаче сворачивает её 
   assert.match(renderer, /selectedTaskId === button\.dataset\.taskId/);
   assert.match(renderer, /refreshQueueView\(\);/);
   assert.doesNotMatch(renderer, /data-close-log/);
+});
+
+test('обновление лога сохраняет ручную прокрутку и позволяет вернуться к последним строкам', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(renderer, /function captureTaskLogScrollState\(taskList: HTMLElement\)/);
+  assert.match(renderer, /function restoreTaskLogScrollState\(\s*taskList: HTMLElement/);
+  assert.match(renderer, /data-scroll-task-log=/);
+  assert.match(renderer, /\[data-scroll-task-log\]/);
+  assert.match(renderer, /scrollTop = taskLog\.scrollHeight/);
+  assert.match(styles, /\.task-log-jump/);
+  assert.match(styles, /\.task-log-jump\[hidden\]/);
+});
+
+test('фоновое обновление очереди не переключает открытый лог', async () => {
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(renderer, /function applyQueueUpdate\(update: DownloadUpdate\): void/);
+  assert.match(
+    renderer,
+    /if \(selectedTaskId && !getVisibleQueue\(\)\.some\(\(task\) => task\.id === selectedTaskId\)\) \{/
+  );
+  assert.doesNotMatch(renderer, /selectedTaskId = update\.task\.id;/);
 });
 
 test('клик по группе повторных попыток переключает группу и закрывает лог', async () => {
@@ -261,4 +301,60 @@ test('дефолтный config yt-dlp встроен в приложение', 
   assert.doesNotMatch(defaultConfig, /\/Users\/alamonall\/Videos/);
   assert.match(settingsService, /app\.getPath\('downloads'\)/);
   assert.match(settingsService, /\.yt-dlp-archive\.txt/);
+});
+
+test('задача сохраняет итоговый config и поддерживает отмену', async () => {
+  const sharedTypes = await readFile(new URL('../src/shared/types.ts', import.meta.url), 'utf8');
+  const downloadsService = await readFile(
+    new URL('../src/main/services/downloads.service.ts', import.meta.url),
+    'utf8'
+  );
+  const preload = await readFile(new URL('../src/preload/index.ts', import.meta.url), 'utf8');
+  const mainProcess = await readFile(
+    new URL('../src/main/electron-application.ts', import.meta.url),
+    'utf8'
+  );
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+
+  assert.match(sharedTypes, /'cancelled'/);
+  assert.match(sharedTypes, /effectiveConfigText: string/);
+  assert.match(downloadsService, /buildTaskConfiguration\(\s*taskId,/);
+  assert.match(downloadsService, /Конфигурация yt-dlp:/);
+  assert.match(downloadsService, /cancel\(taskId: string\)/);
+  assert.match(downloadsService, /child\.kill\('SIGTERM'\)/);
+  assert.match(preload, /cancelDownload/);
+  assert.match(mainProcess, /downloads:cancel/);
+  assert.match(renderer, /data-cancel-task/);
+  assert.match(renderer, /Конфиг yt-dlp:/);
+});
+
+test('граф codebase-memory не отслеживается Git', async () => {
+  const gitignore = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
+
+  assert.match(gitignore, /^\.codebase-memory\/$/m);
+});
+
+test('HTTP 403 предлагает понятные действия вместо общего автоповтора', async () => {
+  const downloadsService = await readFile(
+    new URL('../src/main/services/downloads.service.ts', import.meta.url),
+    'utf8'
+  );
+  const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/renderer/src/styles.css', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(downloadsService, /MAX_HTTP_403_AUTO_RETRIES/);
+  assert.match(renderer, /function renderHttp403Recommendations\(task: DownloadTask\)/);
+  assert.match(renderer, /data-recommend-403-cookies/);
+  assert.match(renderer, /data-recommend-403-throttle/);
+  assert.match(renderer, /data-recommend-403-network/);
+  assert.match(renderer, /data-recommend-403-update/);
+  assert.match(renderer, /--sleep-requests 1/);
+  assert.match(renderer, /function applyHttp403CookiesRecommendation\(taskId: string\)/);
+  assert.match(renderer, /function revealSettingsSection\(optionId: string\): void/);
+  assert.match(
+    renderer,
+    /async function applyHttp403CookiesRecommendation\(taskId: string\): Promise<void> \{[\s\S]*currentTab = 'settings';[\s\S]*settingsMode = 'ui';[\s\S]*settingsSearchQuery = 'cookies';[\s\S]*revealSettingsSection\('cookies-source'\);/
+  );
+  assert.match(renderer, /section\?\.scrollIntoView\(\{ block: 'start' \}\);/);
+  assert.match(styles, /\.http-403-recommendations/);
 });

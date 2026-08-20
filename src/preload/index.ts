@@ -1,6 +1,12 @@
 import { createRequire } from 'node:module';
 import type { IpcRendererEvent } from 'electron';
-import type { AddDownloadPayload, AppSettings, DownloadUpdate, YtdlpApi } from '../shared/types';
+import type {
+  AddDownloadPayload,
+  AppSettings,
+  DownloadUpdate,
+  YtdlpApi,
+  YtdlpReleaseChannel
+} from '../shared/types';
 
 const require = createRequire(import.meta.url);
 const { contextBridge, ipcRenderer } = require('electron') as typeof import('electron');
@@ -11,6 +17,9 @@ const api: YtdlpApi = {
   },
   retryDownload(taskId: string) {
     return ipcRenderer.invoke('downloads:retry', taskId);
+  },
+  cancelDownload(taskId: string) {
+    return ipcRenderer.invoke('downloads:cancel', taskId);
   },
   removeDownload(taskId: string) {
     return ipcRenderer.invoke('downloads:remove', taskId);
@@ -23,6 +32,24 @@ const api: YtdlpApi = {
   },
   updateSettings(settings: AppSettings) {
     return ipcRenderer.invoke('settings:update', settings);
+  },
+  getYtdlpBinaryInfo() {
+    return ipcRenderer.invoke('settings:get-ytdlp-binary-info');
+  },
+  updateYtdlpBinary() {
+    return ipcRenderer.invoke('settings:update-ytdlp-binary');
+  },
+  findYtdlpBinaries() {
+    return ipcRenderer.invoke('settings:find-ytdlp-binaries');
+  },
+  installYtdlpBinary(channel: YtdlpReleaseChannel) {
+    return ipcRenderer.invoke('settings:install-ytdlp-binary', channel);
+  },
+  getYtdlpLatestRelease(channel: YtdlpReleaseChannel) {
+    return ipcRenderer.invoke('settings:get-ytdlp-latest-release', channel);
+  },
+  chooseYtdlpBinary() {
+    return ipcRenderer.invoke('settings:choose-ytdlp-binary');
   },
   getEffectiveOptionsPreview() {
     return ipcRenderer.invoke('settings:get-effective-options-preview');

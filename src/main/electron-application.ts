@@ -6,6 +6,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import type { INestApplicationContext } from '@nestjs/common';
 import type { AddDownloadPayload, AppSettings } from '../shared/types';
 import { AppModule } from './app.module';
+import { BinaryLocatorService } from './services/binary-locator.service';
 import { DownloadsService } from './services/downloads.service';
 import { ElectronShellService } from './services/electron-shell.service';
 import { SettingsService } from './services/settings.service';
@@ -15,6 +16,7 @@ const { app, BrowserWindow, Notification, ipcMain } =
   require('electron') as typeof import('electron');
 
 type RuntimeServices = {
+  binaryLocator: BinaryLocatorService;
   downloads: DownloadsService;
   settings: SettingsService;
   shell: ElectronShellService;
@@ -31,6 +33,7 @@ export class ElectronApplication {
     app.setAppUserModelId('com.alamonall.savvy');
     this.nestApp = await NestFactory.createApplicationContext(AppModule, { logger: false });
     this.services = {
+      binaryLocator: this.nestApp.get(BinaryLocatorService),
       downloads: this.nestApp.get(DownloadsService),
       settings: this.nestApp.get(SettingsService),
       shell: this.nestApp.get(ElectronShellService)
@@ -145,13 +148,28 @@ export class ElectronApplication {
   }
 
   private registerIpcHandlers(): void {
-    const { downloads, settings, shell } = this.getRuntimeServices();
+    const { binaryLocator, downloads, settings, shell } = this.getRuntimeServices();
     ipcMain.handle('downloads:add', (_, payload: AddDownloadPayload) => downloads.add(payload));
     ipcMain.handle('downloads:retry', (_, taskId: string) => downloads.retry(taskId));
+    ipcMain.handle('downloads:cancel', (_, taskId: string) => downloads.cancel(taskId));
     ipcMain.handle('downloads:remove', (_, taskId: string) => downloads.remove(taskId));
     ipcMain.handle('downloads:list', () => downloads.list());
     ipcMain.handle('downloads:clear-history', () => downloads.clearHistory());
     ipcMain.handle('settings:get', () => settings.get());
+    ipcMain.handle('settings:get-ytdlp-binary-info', () =>
+      binaryLocator.getYtdlpBinaryInfo(settings.get().ytdlpPath)
+    );
+    ipcMain.handle('settings:update-ytdlp-binary', () =>
+      binaryLocator.updateYtdlpBinary(settings.get().ytdlpPath, settings.get().ytdlpReleaseChannel)
+    );
+    ipcMain.handle('settings:find-ytdlp-binaries', () => binaryLocator.findYtdlpBinaries());
+    ipcMain.handle('settings:install-ytdlp-binary', (_, channel) =>
+      binaryLocator.installYtdlpBinary(channel)
+    );
+    ipcMain.handle('settings:get-ytdlp-latest-release', (_, channel) =>
+      binaryLocator.getYtdlpLatestRelease(channel)
+    );
+    ipcMain.handle('settings:choose-ytdlp-binary', () => shell.chooseYtdlpBinary());
     ipcMain.handle('settings:get-effective-options-preview', () =>
       settings.getEffectiveOptionsPreview()
     );

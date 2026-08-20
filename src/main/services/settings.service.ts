@@ -9,6 +9,11 @@ import { BinaryLocatorService } from './binary-locator.service';
 const require = createRequire(import.meta.url);
 const { app } = require('electron') as typeof import('electron');
 
+type TaskConfiguration = {
+  optionsText: string;
+  effectiveConfigText: string;
+};
+
 @Injectable()
 export class SettingsService {
   private settings: AppSettings | null = null;
@@ -49,6 +54,8 @@ export class SettingsService {
     const normalizedSettings: AppSettings = {
       ...currentSettings,
       ...nextSettings,
+      ytdlpPath: nextSettings.ytdlpPath.trim(),
+      ytdlpReleaseChannel: nextSettings.ytdlpReleaseChannel,
       downloadDir: nextSettings.downloadDir.trim() || currentSettings.downloadDir,
       maxConcurrentDownloads: Number.isFinite(maxConcurrentDownloads)
         ? Math.max(1, Math.min(8, Math.floor(maxConcurrentDownloads)))
@@ -74,23 +81,21 @@ export class SettingsService {
     return this.settings;
   }
 
-  buildTaskOptionsText(optionsText: string): string {
-    const appSettings = this.get();
-    const configArgs: string[] = [];
-    const managedArgs = this.buildManagedOptionsArgs(appSettings);
-    const inlineConfigPath = this.writeInlineConfigIfNeeded();
+  /** Создаёт неизменяемый снимок конфигурации, с которым запускается конкретная задача. */
+  buildTaskConfiguration(taskId: string, optionsText: string): TaskConfiguration {
+    const effectiveConfigText = this.buildEffectiveConfigText();
+    const configPath = this.writeEffectiveConfig(taskId, effectiveConfigText);
 
-    if (inlineConfigPath) {
-      configArgs.push('--config-locations', inlineConfigPath);
-    }
-
-    return [this.serializeArgs(configArgs), this.serializeArgs(managedArgs), optionsText.trim()]
-      .filter(Boolean)
-      .join(' ');
+    return {
+      optionsText: [this.serializeArgs(['--config-locations', configPath]), optionsText.trim()]
+        .filter(Boolean)
+        .join(' '),
+      effectiveConfigText
+    };
   }
 
   getEffectiveOptionsPreview(): string {
-    return this.buildTaskOptionsText('');
+    return this.buildTaskConfiguration('preview', '').optionsText;
   }
 
   parseOptions(optionsText: string): string[] {
@@ -161,6 +166,8 @@ export class SettingsService {
 
   private createDefaultSettings(): AppSettings {
     return {
+      ytdlpPath: '',
+      ytdlpReleaseChannel: 'stable',
       downloadDir: app.getPath('downloads'),
       maxConcurrentDownloads: 1,
       inlineConfigText: this.getDefaultConfigText(),
@@ -449,10 +456,6 @@ export class SettingsService {
       args.push('--windows-filenames');
     }
 
-    if (this.binaryLocatorService.getDenoPath() && !this.hasCustomJsRuntime(appSettings)) {
-      args.push('--js-runtimes', 'deno');
-    }
-
     const ffmpegDirectory = this.binaryLocatorService.getFfmpegDirectory();
     if (ffmpegDirectory && !appSettings.ffmpegLocation.trim()) {
       args.push('--ffmpeg-location', ffmpegDirectory);
@@ -463,12 +466,6 @@ export class SettingsService {
     }
 
     return args;
-  }
-
-  private hasCustomJsRuntime(appSettings: AppSettings): boolean {
-    return [appSettings.inlineConfigText, appSettings.additionalOptions].some((text) =>
-      /(^|\s)--js-runtimes(?:=|\s|$)/.test(text)
-    );
   }
 
   private serializeArgs(args: string[]): string {
@@ -614,16 +611,76 @@ export class SettingsService {
     writeFileSync(this.getInlineConfigPath(), `${configText.trim()}\n`, 'utf8');
   }
 
-  private writeInlineConfigIfNeeded(): string | null {
-    const inlineConfigText = this.get().inlineConfigText.trim();
+  /**
+   * Записывает единый конфиг: текстовый ввод, затем параметры UI с более высоким приоритетом.
+   *
+   * @returns Текст конфига, объединяющий текстовый режим и настройки UI.
+   */
+  private buildEffectiveConfigText(): string {
+    const appSettings = this.get();
+    const inlineConfigText = appSettings.inlineConfigText.trim();
+    const managedArgs = this.removeDuplicateManagedArgs(
+      inlineConfigText,
+      this.buildManagedOptionsArgs(appSettings)
+    );
 
-    if (!inlineConfigText) {
-      return null;
+    return [inlineConfigText, this.serializeArgs(managedArgs)].filter(Boolean).join('\n');
+  }
+
+  /**
+   * Убирает только идентичные текстовому конфигу UI-аргументы.
+   *
+   * Разные значения одного параметра сохраняются: аргумент UI должен остаться
+   * последним и тем самым сохранить объявленный для него приоритет.
+   */
+  private removeDuplicateManagedArgs(configText: string, managedArgs: string[]): string[] {
+    const configArgs = this.parseYtdlpConfigText(configText);
+    const uniqueArgs: string[] = [];
+
+    for (let index = 0; index < managedArgs.length; index += 1) {
+      const option = managedArgs[index];
+      const value = managedArgs[index + 1];
+      const argument =
+        option.startsWith('-') && value !== undefined && !value.startsWith('-')
+          ? [option, value]
+          : [option];
+
+      if (!this.hasArgumentSequence(configArgs, argument)) {
+        uniqueArgs.push(...argument);
+      }
+
+      index += argument.length - 1;
     }
 
+    return uniqueArgs;
+  }
+
+  /** Проверяет наличие аргумента в текстовом конфиге с учётом коротких псевдонимов yt-dlp. */
+  private hasArgumentSequence(configArgs: string[], argument: string[]): boolean {
+    return configArgs.some((configArg, index) =>
+      argument.every(
+        (part, offset) =>
+          this.normalizeOptionAlias(configArgs[index + offset]) === this.normalizeOptionAlias(part)
+      )
+    );
+  }
+
+  /** Приводит поддерживаемые короткие формы yt-dlp к длинным для сравнения конфигов. */
+  private normalizeOptionAlias(argument: string | undefined): string | undefined {
+    const aliases: Record<string, string> = {
+      '-f': '--format',
+      '-o': '--output',
+      '-P': '--paths'
+    };
+
+    return argument === undefined ? undefined : (aliases[argument] ?? argument);
+  }
+
+  /** Записывает неизменяемый конфиг конкретной задачи, чтобы очередь не меняла её параметры. */
+  private writeEffectiveConfig(taskId: string, effectiveConfigText: string): string {
     mkdirSync(app.getPath('userData'), { recursive: true });
-    const configPath = this.getInlineConfigPath();
-    writeFileSync(configPath, `${inlineConfigText}\n`, 'utf8');
+    const configPath = join(app.getPath('userData'), `yt-dlp-${taskId}.conf`);
+    writeFileSync(configPath, `${effectiveConfigText}\n`, 'utf8');
 
     return configPath;
   }

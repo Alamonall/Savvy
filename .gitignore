@@ -4,6 +4,7 @@ out/
 build/
 coverage/
 .cache-electron/
+.codebase-memory/
 bun.lock
 *.log
 .DS_Store
