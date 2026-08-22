@@ -2152,6 +2152,79 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
     .join('');
 }
 
+function renderMinimapItem(task: DownloadTask): string {
+  const isSelected = task.id === selectedTaskId;
+  const title = task.title || task.url;
+
+  return `
+    <button class="minimap-item ${isSelected ? 'active' : ''}" data-minimap-task-id="${task.id}" type="button" title="${escapeHtml(title)}">
+      <span class="minimap-item-head">
+        <span class="minimap-dot ${task.status}"></span>
+        <span class="minimap-title">${escapeHtml(title)}</span>
+        <span class="progress-value">${formatProgress(task)}</span>
+      </span>
+      <span class="progress-track minimap-progress-track" aria-hidden="true">
+        <span class="progress-fill" style="width: ${typeof task.progress === 'number' ? task.progress : 0}%"></span>
+      </span>
+    </button>
+  `;
+}
+
+function renderDownloadsMinimap(tasks: DownloadTask[]): string {
+  return `
+    <aside class="panel downloads-minimap" aria-label="Миникарта закачек">
+      <div class="section-head">
+        <h2>Миникарта</h2>
+        <span id="minimap-count">${tasks.length}</span>
+      </div>
+      <div class="minimap-items" id="minimap-items">
+        ${
+          tasks.length
+            ? tasks.map((task) => renderMinimapItem(task)).join('')
+            : '<p class="empty">Нет задач.</p>'
+        }
+      </div>
+    </aside>
+  `;
+}
+
+/** Раскрывает свёрнутые день/группу ссылки, чтобы выбранная задача стала видимой. */
+function revealTaskInTaskList(task: DownloadTask): void {
+  const dayKey = getDayKey(task.createdAt);
+  collapsedDays[dayKey] = false;
+  saveCollapsedDays();
+
+  const sameUrlCount = getVisibleQueue().filter((item) => item.url === task.url).length;
+  if (sameUrlCount > 1) {
+    expandedUrlGroups[getUrlGroupKey(dayKey, task.url)] = true;
+    saveExpandedUrlGroups();
+  }
+}
+
+/** Выбирает задачу из миникарты и прокручивает список к её карточке. */
+function handleMinimapClick(taskId: string | undefined): void {
+  const task = taskId ? queue.find((item) => item.id === taskId) : null;
+  if (!task) {
+    return;
+  }
+
+  selectedTaskId = task.id;
+  revealTaskInTaskList(task);
+  refreshQueueView();
+  document
+    .querySelector<HTMLElement>(`[data-task-id="${CSS.escape(task.id)}"]`)
+    ?.closest('.task')
+    ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function bindMinimapEvents(): void {
+  document.querySelectorAll<HTMLButtonElement>('[data-minimap-task-id]').forEach((button) => {
+    button.addEventListener('click', () => {
+      handleMinimapClick(button.dataset.minimapTaskId);
+    });
+  });
+}
+
 function refreshQueueView(): void {
   if (currentTab !== 'queue') {
     return;
@@ -2183,6 +2256,17 @@ function refreshQueueView(): void {
   taskList.innerHTML = renderTaskListMarkup(queue, selectedTask);
   taskList.scrollTop = previousScrollTop;
   restoreTaskLogScrollState(taskList, previousTaskLogScrollState);
+
+  const minimapCount = document.querySelector<HTMLElement>('#minimap-count');
+  const minimapItems = document.querySelector<HTMLElement>('#minimap-items');
+
+  if (minimapCount && minimapItems) {
+    minimapCount.textContent = String(visibleQueue.length);
+    minimapItems.innerHTML = visibleQueue.length
+      ? visibleQueue.map((task) => renderMinimapItem(task)).join('')
+      : '<p class="empty">Нет задач.</p>';
+    bindMinimapEvents();
+  }
 
   bindQueueTaskEvents();
   bindQueueGroupEvents();
@@ -2286,6 +2370,7 @@ function render(): void {
                   ${renderTaskListMarkup(queue, selectedTask)}
                 </div>
               </div>
+              ${renderDownloadsMinimap(visibleQueue)}
             </section>
           `
             : renderSettingsPanel()
@@ -2826,6 +2911,7 @@ function bindEvents(): void {
   bindQueueTaskEvents();
   bindQueueGroupEvents();
   bindQueueStaticEvents();
+  bindMinimapEvents();
   bindFolderPickerEvents();
 
   document.querySelector<HTMLInputElement>('#url-input')?.addEventListener('blur', () => {
