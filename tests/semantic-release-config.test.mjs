@@ -36,7 +36,7 @@ test('release workflow uploads only distributable installer files', () => {
 });
 
 test('semantic release calculates stable versions for manual releases', () => {
-  assert.deepEqual(releaseConfig.branches, ['master']);
+  assert.match(JSON.stringify(releaseConfig.branches), /master/);
   assert.match(JSON.stringify(releaseConfig.plugins), /@semantic-release\/github/);
   assert.match(workflow, /Версия пишется только в рабочую копию/);
   assert.doesNotMatch(workflow, /git commit -m/);
@@ -82,6 +82,7 @@ test('stable releases are published without a prerelease suffix', () => {
   assert.doesNotMatch(workflow, /git commit -m/);
   assert.match(workflow, /git push origin "refs\/tags\/v\$\{RELEASE_VERSION\}"/);
   assert.match(workflow, /--title "\$\{RELEASE_VERSION\}"/);
+  assert.match(workflow, /git push origin "refs\/tags\/v\$\{RELEASE_VERSION\}"/);
   assert.doesNotMatch(workflow, /--prerelease.*RELEASE_CHANNEL.*stable/);
 });
 

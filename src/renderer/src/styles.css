@@ -515,7 +515,9 @@ textarea:focus {
 }
 
 .workspace {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  gap: 18px;
   min-height: 0;
 }
 
@@ -524,6 +526,90 @@ textarea:focus {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+.downloads-minimap {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 122px);
+}
+
+.minimap-items {
+  display: grid;
+  flex: 1;
+  align-content: start;
+  gap: 6px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.minimap-item {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid #dbe3ea;
+  border-radius: 6px;
+  background: #ffffff;
+  color: inherit;
+  padding: 8px;
+  text-align: left;
+}
+
+.minimap-item:hover {
+  background: #f1f5f9;
+}
+
+.minimap-item.active {
+  border-color: #1849a9;
+  background: #eff4ff;
+}
+
+.minimap-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.minimap-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #98a2b3;
+}
+
+.minimap-dot.queued {
+  background: #475467;
+}
+
+.minimap-dot.running {
+  background: #f79009;
+}
+
+.minimap-dot.done {
+  background: #12b76a;
+}
+
+.minimap-dot.failed {
+  background: #f04438;
+}
+
+.minimap-title {
+  flex: 1;
+  overflow: hidden;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.minimap-progress-track {
+  height: 4px;
 }
 
 .settings-screen,
@@ -1679,6 +1765,25 @@ label.settings-option {
 
 [data-theme='dark'] .progress-track {
   background: #374151;
+}
+
+[data-theme='dark'] .minimap-item {
+  border-color: #4b5563;
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .minimap-item:hover {
+  background: #26364d;
+}
+
+[data-theme='dark'] .minimap-item.active {
+  border-color: #60a5fa;
+  background: #26364d;
+}
+
+[data-theme='dark'] .minimap-title {
+  color: #d1d5db;
 }
 
 [data-theme='dark'] .status.queued {
