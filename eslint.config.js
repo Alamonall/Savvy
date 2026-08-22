@@ -8,6 +8,12 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ['**/*.{ts,mjs}'],
+    rules: {
+      'max-classes-per-file': ['error', 1]
+    }
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: {
       parserOptions: {

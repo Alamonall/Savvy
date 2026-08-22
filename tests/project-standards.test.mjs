@@ -30,6 +30,13 @@ test('скрипты качества кода доступны из package.jso
   );
 });
 
+test('линтер разрешает не более одного класса в TypeScript и JavaScript файле', async () => {
+  const eslintConfig = await readFile(new URL('../eslint.config.js', import.meta.url), 'utf8');
+
+  assert.match(eslintConfig, /files: \['\*\*\/\*\.\{ts,mjs\}'\]/);
+  assert.match(eslintConfig, /'max-classes-per-file': \['error', 1\]/);
+});
+
 test('CI проверяет стабильные и prerelease-ветки', () => {
   for (const branch of ['master', 'release/nightly', 'release/beta']) {
     assert.match(ciWorkflow, new RegExp(`- ${branch.replace('/', '\\/')}`));

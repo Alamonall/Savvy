@@ -95,18 +95,21 @@ jobs:
             artifact-path: |
               dist/*.AppImage
               dist/*.deb
+              dist/*.yml
           - platform: macOS
             runner: macos-latest
             command: npm run dist:mac
             artifact-path: |
               dist/*.dmg
               dist/*.zip
+              dist/*.yml
           - platform: Windows
             runner: windows-latest
             command: npm run dist:windows
             artifact-path: |
               dist/*.exe
               dist/*.blockmap
+              dist/*.yml
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Получить исходный код
@@ -132,6 +135,12 @@ jobs:
 
       - name: Собрать установщик
         run: ${{ matrix.command }}
+        env:
+          CSC_LINK: ${{ matrix.platform == 'macOS' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.platform == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.platform == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
 
       - name: Сохранить установщики
         uses: actions/upload-artifact@v6
