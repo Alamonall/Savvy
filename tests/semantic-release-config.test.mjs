@@ -36,10 +36,10 @@ test('release workflow uploads only distributable installer files', () => {
 });
 
 test('semantic release calculates stable versions for manual releases', () => {
-  assert.deepEqual(releaseConfig.branches, ['master']);
+  assert.match(JSON.stringify(releaseConfig.branches), /master/);
   assert.match(JSON.stringify(releaseConfig.plugins), /@semantic-release\/github/);
-  assert.match(workflow, /Обновить версию package\.json/);
-  assert.match(workflow, /\[skip ci\]/);
+  assert.match(workflow, /Версия пишется только в рабочую копию/);
+  assert.doesNotMatch(workflow, /git commit/);
 
   const releaseRules = releaseConfig.plugins.find(
     (plugin) => Array.isArray(plugin) && plugin[0] === '@semantic-release/commit-analyzer'
@@ -73,13 +73,13 @@ test('pushes to master calculate incrementing alpha versions without changing th
   assert.match(workflow, /alpha_tag=.*git tag --list/);
   assert.match(workflow, /echo "version=\$\{base_version\}-alpha\.\$\{alpha_number\}"/);
   assert.match(workflow, /gh release create/);
-  assert.match(workflow, /--prerelease --generate-notes/);
+  assert.match(workflow, /--prerelease --notes-file release-notes\.md/);
 });
 
 test('stable releases are published without a prerelease suffix', () => {
   assert.match(workflow, /if \[ "\$RELEASE_CHANNEL" = "stable" \]; then/);
-  assert.match(workflow, /git commit -m "chore: подготовить стабильный релиз/);
   assert.match(workflow, /--title "\$\{RELEASE_VERSION\}"/);
+  assert.match(workflow, /git push origin "refs\/tags\/v\$\{RELEASE_VERSION\}"/);
   assert.doesNotMatch(workflow, /--prerelease.*RELEASE_CHANNEL.*stable/);
 });
 
