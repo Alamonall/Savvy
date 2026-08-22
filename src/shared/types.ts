@@ -106,6 +106,22 @@ export interface DownloadUpdate {
   queue: DownloadTask[];
 }
 
+export type ApplicationUpdateStatus = 'idle' | 'available' | 'downloading' | 'downloaded' | 'error';
+
+/** Состояние обновления Savvy, безопасное для передачи в renderer-процесс. */
+export interface ApplicationUpdateState {
+  status: ApplicationUpdateStatus;
+  currentVersion: string;
+  version: string | null;
+  releaseNotes: string | null;
+  releaseUrl: string | null;
+  downloadPercent: number | null;
+  errorMessage: string | null;
+  requiresManualDownload: boolean;
+  activeDownloadCount: number;
+  queuedDownloadCount: number;
+}
+
 export interface FolderEntry {
   name: string;
   path: string;
@@ -141,5 +157,12 @@ export interface YtdlpApi {
   clearHistory(): Promise<DownloadTask[]>;
   openUrl(url: string): Promise<void>;
   openFolder(path: string): Promise<void>;
+  getApplicationUpdate(): Promise<ApplicationUpdateState>;
+  downloadApplicationUpdate(): Promise<void>;
+  installApplicationUpdate(
+    confirmedActiveDownloadCount: number,
+    confirmedQueuedDownloadCount: number
+  ): Promise<void>;
   onQueueUpdate(callback: (update: DownloadUpdate) => void): () => void;
+  onApplicationUpdate(callback: (update: ApplicationUpdateState) => void): () => void;
 }

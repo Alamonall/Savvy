@@ -72,6 +72,14 @@ export class DownloadsService {
     return this.cloneQueue();
   }
 
+  /** Возвращает число задач, которые будут прерваны при закрытии приложения. */
+  getPendingTaskCounts(): { active: number; queued: number } {
+    return {
+      active: this.queue.filter((task) => task.status === 'running').length,
+      queued: this.queue.filter((task) => task.status === 'queued').length
+    };
+  }
+
   add(payload: AddDownloadPayload): DownloadTask {
     const url = payload.url.trim();
     if (!url) {
