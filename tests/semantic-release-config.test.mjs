@@ -39,7 +39,8 @@ test('semantic release calculates stable versions for manual releases', () => {
   assert.match(JSON.stringify(releaseConfig.branches), /master/);
   assert.match(JSON.stringify(releaseConfig.plugins), /@semantic-release\/github/);
   assert.match(workflow, /Версия пишется только в рабочую копию/);
-  assert.doesNotMatch(workflow, /git commit/);
+  assert.doesNotMatch(workflow, /git commit -m/);
+  assert.doesNotMatch(workflow, /git push origin master/);
 
   const releaseRules = releaseConfig.plugins.find(
     (plugin) => Array.isArray(plugin) && plugin[0] === '@semantic-release/commit-analyzer'
@@ -78,6 +79,8 @@ test('pushes to master calculate incrementing alpha versions without changing th
 
 test('stable releases are published without a prerelease suffix', () => {
   assert.match(workflow, /if \[ "\$RELEASE_CHANNEL" = "stable" \]; then/);
+  assert.doesNotMatch(workflow, /git commit -m/);
+  assert.match(workflow, /git push origin "refs\/tags\/v\$\{RELEASE_VERSION\}"/);
   assert.match(workflow, /--title "\$\{RELEASE_VERSION\}"/);
   assert.match(workflow, /git push origin "refs\/tags\/v\$\{RELEASE_VERSION\}"/);
   assert.doesNotMatch(workflow, /--prerelease.*RELEASE_CHANNEL.*stable/);

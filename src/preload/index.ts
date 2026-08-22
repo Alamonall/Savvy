@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import type { IpcRendererEvent } from 'electron';
 import type {
   AddDownloadPayload,
+  ApplicationUpdateState,
   AppSettings,
   DownloadUpdate,
   YtdlpApi,
@@ -75,6 +76,22 @@ const api: YtdlpApi = {
   openFolder(path: string) {
     return ipcRenderer.invoke('shell:open-folder', path);
   },
+  getApplicationUpdate() {
+    return ipcRenderer.invoke('application-update:get');
+  },
+  downloadApplicationUpdate() {
+    return ipcRenderer.invoke('application-update:download');
+  },
+  installApplicationUpdate(
+    confirmedActiveDownloadCount: number,
+    confirmedQueuedDownloadCount: number
+  ) {
+    return ipcRenderer.invoke(
+      'application-update:install',
+      confirmedActiveDownloadCount,
+      confirmedQueuedDownloadCount
+    );
+  },
   onQueueUpdate(callback: (update: DownloadUpdate) => void) {
     const listener = (_event: IpcRendererEvent, update: DownloadUpdate): void => {
       callback(update);
@@ -84,6 +101,17 @@ const api: YtdlpApi = {
 
     return () => {
       ipcRenderer.off('downloads:update', listener);
+    };
+  },
+  onApplicationUpdate(callback: (update: ApplicationUpdateState) => void) {
+    const listener = (_event: IpcRendererEvent, update: ApplicationUpdateState): void => {
+      callback(update);
+    };
+
+    ipcRenderer.on('application-update:update', listener);
+
+    return () => {
+      ipcRenderer.off('application-update:update', listener);
     };
   }
 };

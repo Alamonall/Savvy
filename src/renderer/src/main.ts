@@ -1,4 +1,5 @@
 import type {
+  ApplicationUpdateState,
   AppSettings,
   DownloadUpdate,
   DownloadTask,
@@ -92,6 +93,7 @@ let selectedTaskId: string | null = null;
 let startupError: string | null = null;
 let runtimeNotice: string | null = null;
 let isConfigModalOpen = false;
+let isInstallUpdateModalOpen = false;
 let pendingQueue: DownloadTask[] | null = null;
 let pendingSelectedTaskId: string | null = null;
 let urlDraft = '';
@@ -112,6 +114,7 @@ let folderPicker: FolderPickerState | null = null;
 let theme: Theme = readTheme();
 let cookiesSource: CookiesSource = readCookiesSource();
 let settingsSearchQuery = '';
+let applicationUpdate: ApplicationUpdateState | null = null;
 let settings: AppSettings = {
   ytdlpPath: '',
   ytdlpReleaseChannel: 'stable',
@@ -860,6 +863,7 @@ function installBrowserPreviewApi(): void {
   let previewQueue: DownloadTask[] = [];
   let taskCounter = 0;
   const listeners = new Set<(update: { task: DownloadTask; queue: DownloadTask[] }) => void>();
+  const applicationUpdateListeners = new Set<(update: ApplicationUpdateState) => void>();
 
   const emitQueueUpdate = (task: DownloadTask): void => {
     const queueSnapshot = previewQueue.map((item) => ({ ...item, log: [...item.log] }));
@@ -1027,10 +1031,36 @@ function installBrowserPreviewApi(): void {
     async openFolder() {
       return undefined;
     },
+    async getApplicationUpdate() {
+      return {
+        status: 'idle' as const,
+        currentVersion: 'preview',
+        version: null,
+        releaseNotes: null,
+        releaseUrl: null,
+        downloadPercent: null,
+        errorMessage: null,
+        requiresManualDownload: false,
+        activeDownloadCount: 0,
+        queuedDownloadCount: 0
+      };
+    },
+    async downloadApplicationUpdate() {
+      throw new Error('Обновление приложения доступно только в Electron.');
+    },
+    async installApplicationUpdate() {
+      throw new Error('Обновление приложения доступно только в Electron.');
+    },
     onQueueUpdate(callback) {
       listeners.add(callback);
       return () => {
         listeners.delete(callback);
+      };
+    },
+    onApplicationUpdate(callback) {
+      applicationUpdateListeners.add(callback);
+      return () => {
+        applicationUpdateListeners.delete(callback);
       };
     }
   };
@@ -2299,6 +2329,68 @@ function toggleTheme(): void {
   render();
 }
 
+/** Рендерит доступное действие обновления, не показывая его до нахождения версии. */
+function renderApplicationUpdateButton(): string {
+  if (!applicationUpdate || applicationUpdate.status === 'idle') {
+    return '';
+  }
+
+  const isDownloading = applicationUpdate.status === 'downloading';
+  const isDownloaded = applicationUpdate.status === 'downloaded';
+  const label = applicationUpdate.requiresManualDownload
+    ? 'Открыть релиз'
+    : isDownloaded
+      ? 'Установить обновление'
+      : isDownloading
+        ? `Скачивание ${applicationUpdate.downloadPercent ?? 0}%`
+        : applicationUpdate.errorMessage
+          ? 'Повторить скачивание'
+          : 'Скачать обновление';
+  const details = [
+    applicationUpdate.version
+      ? `${applicationUpdate.currentVersion} → ${applicationUpdate.version}`
+      : null,
+    applicationUpdate.releaseNotes,
+    applicationUpdate.releaseUrl ? 'Полный список изменений доступен на GitHub.' : null
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  return `
+    <div class="application-update">
+      <button class="ghost bordered application-update-button" data-application-update type="button" ${isDownloading ? 'disabled' : ''} aria-describedby="application-update-tooltip">${escapeHtml(label)}</button>
+      <span class="application-update-tooltip" id="application-update-tooltip" role="tooltip">
+        ${escapeHtml(details)}
+        ${applicationUpdate.releaseUrl ? `<button class="text-link application-update-release" data-open-application-release type="button">Открыть GitHub Release</button>` : ''}
+      </span>
+      ${applicationUpdate.errorMessage ? `<p class="application-update-error">${escapeHtml(applicationUpdate.errorMessage)}</p>` : ''}
+    </div>
+  `;
+}
+
+/** Показывает подтверждение, когда установка закроет приложение с незавершёнными задачами. */
+function renderInstallUpdateModal(): string {
+  if (!isInstallUpdateModalOpen || !applicationUpdate) {
+    return '';
+  }
+
+  const { active: activeTasks, queued: queuedTasks } = getPendingQueueTaskCounts();
+  const taskMessage = `Активные и ожидающие загрузки будут прерваны: выполняются ${activeTasks}, ожидают ${queuedTasks}.`;
+
+  return `
+    <div class="modal-backdrop" role="presentation">
+      <section class="modal application-update-modal" role="dialog" aria-modal="true" aria-labelledby="application-update-modal-title">
+        <h2 id="application-update-modal-title">Установить обновление?</h2>
+        <p>${escapeHtml(taskMessage)}</p>
+        <div class="modal-actions">
+          <button class="ghost bordered" data-cancel-application-update-install type="button">Отмена</button>
+          <button class="primary" data-confirm-application-update-install type="button">Установить и перезапустить</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function render(): void {
   const previousTaskList = document.querySelector<HTMLElement>('#task-list');
   const previousTaskLogScrollState = previousTaskList
@@ -2320,6 +2412,7 @@ function render(): void {
           </div>
         </div>
         <div class="topbar-actions">
+          ${renderApplicationUpdateButton()}
           <button class="ghost bordered theme-toggle" data-toggle-theme type="button" title="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}" aria-label="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}">${theme === 'dark' ? '☀' : '☾'}</button>
           <nav class="tabs" aria-label="Разделы">
             <button class="tab ${currentTab === 'queue' ? 'active' : ''}" data-tab="queue">Скачивание</button>
@@ -2378,6 +2471,7 @@ function render(): void {
     </main>
   ${renderFolderPicker()}
   ${renderConfigModal()}
+  ${renderInstallUpdateModal()}
   `;
 
   bindEvents();
@@ -2908,6 +3002,33 @@ function bindEvents(): void {
     });
   });
 
+  document
+    .querySelector<HTMLButtonElement>('[data-application-update]')
+    ?.addEventListener('click', () => {
+      void handleApplicationUpdateAction();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('[data-open-application-release]')
+    ?.addEventListener('click', () => {
+      if (applicationUpdate?.releaseUrl) {
+        void window.ytdlp.openUrl(applicationUpdate.releaseUrl);
+      }
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('[data-cancel-application-update-install]')
+    ?.addEventListener('click', () => {
+      isInstallUpdateModalOpen = false;
+      render();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('[data-confirm-application-update-install]')
+    ?.addEventListener('click', () => {
+      void installApplicationUpdate();
+    });
+
   bindQueueTaskEvents();
   bindQueueGroupEvents();
   bindQueueStaticEvents();
@@ -2924,6 +3045,66 @@ function bindEvents(): void {
 
   if (currentTab === 'settings') {
     bindSettingsEvents();
+  }
+}
+
+/** Выполняет действие текущего этапа обновления: скачивание или переход к установке. */
+async function handleApplicationUpdateAction(): Promise<void> {
+  if (!applicationUpdate) {
+    return;
+  }
+
+  if (applicationUpdate.status === 'available') {
+    if (applicationUpdate.requiresManualDownload && applicationUpdate.releaseUrl) {
+      await window.ytdlp.openUrl(applicationUpdate.releaseUrl);
+      return;
+    }
+
+    await downloadApplicationUpdate();
+    return;
+  }
+
+  if (applicationUpdate.status !== 'downloaded') {
+    return;
+  }
+
+  const pendingTasks = getPendingQueueTaskCounts();
+  if (pendingTasks.active + pendingTasks.queued > 0) {
+    isInstallUpdateModalOpen = true;
+    render();
+    return;
+  }
+
+  await installApplicationUpdate();
+}
+
+/** Возвращает текущие задачи очереди, которые будут прерваны закрытием приложения. */
+function getPendingQueueTaskCounts(): { active: number; queued: number } {
+  return {
+    active: queue.filter((task) => task.status === 'running').length,
+    queued: queue.filter((task) => task.status === 'queued').length
+  };
+}
+
+/** Запрашивает фоновое скачивание и оставляет повторную попытку доступной при ошибке. */
+async function downloadApplicationUpdate(): Promise<void> {
+  try {
+    await window.ytdlp.downloadApplicationUpdate();
+  } catch (error) {
+    runtimeNotice = error instanceof Error ? error.message : 'Не удалось скачать обновление.';
+    render();
+  }
+}
+
+/** Передаёт явное подтверждение прерывания задач main-процессу перед quitAndInstall. */
+async function installApplicationUpdate(): Promise<void> {
+  try {
+    const pendingTasks = getPendingQueueTaskCounts();
+    await window.ytdlp.installApplicationUpdate(pendingTasks.active, pendingTasks.queued);
+  } catch (error) {
+    isInstallUpdateModalOpen = false;
+    runtimeNotice = error instanceof Error ? error.message : 'Не удалось установить обновление.';
+    render();
   }
 }
 
@@ -3435,6 +3616,11 @@ window.ytdlp.onQueueUpdate((update) => {
   applyQueueUpdate(update);
 });
 
+window.ytdlp.onApplicationUpdate((update) => {
+  applicationUpdate = update;
+  render();
+});
+
 applyTheme();
 render();
 
@@ -3455,6 +3641,7 @@ async function initializeApp(): Promise<void> {
     effectiveOptionsPreview = await window.ytdlp.getEffectiveOptionsPreview();
     await refreshYtdlpBinaryInfo();
     queue = await window.ytdlp.getQueue();
+    applicationUpdate = await window.ytdlp.getApplicationUpdate();
   } catch (error) {
     startupError =
       error instanceof Error ? error.message : 'Не удалось получить очередь скачивания.';

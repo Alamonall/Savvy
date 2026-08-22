@@ -6,6 +6,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import type { INestApplicationContext } from '@nestjs/common';
 import type { AddDownloadPayload, AppSettings } from '../shared/types';
 import { AppModule } from './app.module';
+import { ApplicationUpdaterService } from './services/application-updater.service';
 import { BinaryLocatorService } from './services/binary-locator.service';
 import { DownloadsService } from './services/downloads.service';
 import { ElectronShellService } from './services/electron-shell.service';
@@ -16,6 +17,7 @@ const { app, BrowserWindow, Notification, ipcMain } =
   require('electron') as typeof import('electron');
 
 type RuntimeServices = {
+  applicationUpdater: ApplicationUpdaterService;
   binaryLocator: BinaryLocatorService;
   downloads: DownloadsService;
   settings: SettingsService;
@@ -33,6 +35,7 @@ export class ElectronApplication {
     app.setAppUserModelId('com.alamonall.savvy');
     this.nestApp = await NestFactory.createApplicationContext(AppModule, { logger: false });
     this.services = {
+      applicationUpdater: this.nestApp.get(ApplicationUpdaterService),
       binaryLocator: this.nestApp.get(BinaryLocatorService),
       downloads: this.nestApp.get(DownloadsService),
       settings: this.nestApp.get(SettingsService),
@@ -48,10 +51,14 @@ export class ElectronApplication {
         this.showDownloadDoneNotification(update.task.title || update.task.url);
       }
     });
+    this.services.applicationUpdater.setUpdateSender((update) => {
+      this.mainWindow?.webContents.send('application-update:update', update);
+    });
 
     this.registerIpcHandlers();
     this.setDockIcon();
     this.createWindow();
+    this.services.applicationUpdater.initialize();
     app.on('activate', this.handleActivate);
   }
 
@@ -148,13 +155,21 @@ export class ElectronApplication {
   }
 
   private registerIpcHandlers(): void {
-    const { binaryLocator, downloads, settings, shell } = this.getRuntimeServices();
+    const { applicationUpdater, binaryLocator, downloads, settings, shell } =
+      this.getRuntimeServices();
     ipcMain.handle('downloads:add', (_, payload: AddDownloadPayload) => downloads.add(payload));
     ipcMain.handle('downloads:retry', (_, taskId: string) => downloads.retry(taskId));
     ipcMain.handle('downloads:cancel', (_, taskId: string) => downloads.cancel(taskId));
     ipcMain.handle('downloads:remove', (_, taskId: string) => downloads.remove(taskId));
     ipcMain.handle('downloads:list', () => downloads.list());
     ipcMain.handle('downloads:clear-history', () => downloads.clearHistory());
+    ipcMain.handle('application-update:get', () => applicationUpdater.getState());
+    ipcMain.handle('application-update:download', () => applicationUpdater.download());
+    ipcMain.handle(
+      'application-update:install',
+      (_, confirmedActiveDownloadCount: number, confirmedQueuedDownloadCount: number) =>
+        applicationUpdater.install(confirmedActiveDownloadCount, confirmedQueuedDownloadCount)
+    );
     ipcMain.handle('settings:get', () => settings.get());
     ipcMain.handle('settings:get-ytdlp-binary-info', () =>
       binaryLocator.getYtdlpBinaryInfo(settings.get().ytdlpPath)
