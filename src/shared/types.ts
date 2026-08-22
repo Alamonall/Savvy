@@ -1,10 +1,11 @@
-export type DownloadStatus = 'queued' | 'running' | 'done' | 'failed';
+export type DownloadStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface DownloadTask {
   id: string;
   url: string;
   title?: string;
   optionsText: string;
+  effectiveConfigText: string;
   downloadDir: string;
   status: DownloadStatus;
   createdAt: number;
@@ -13,7 +14,6 @@ export interface DownloadTask {
   exitCode?: number | null;
   progress?: number | null;
   userMessage?: string | null;
-  autoRetryAttempt?: number;
   log: string[];
 }
 
@@ -24,6 +24,8 @@ export interface AddDownloadPayload {
 }
 
 export interface AppSettings {
+  ytdlpPath: string;
+  ytdlpReleaseChannel: YtdlpReleaseChannel;
   downloadDir: string;
   maxConcurrentDownloads: number;
   inlineConfigText: string;
@@ -88,6 +90,17 @@ export interface AppSettings {
   additionalOptions: string;
 }
 
+export interface YtdlpBinaryInfo {
+  path: string | null;
+  version: string | null;
+}
+
+export type YtdlpReleaseChannel = 'stable' | 'nightly';
+
+export interface YtdlpBinaryCandidate extends YtdlpBinaryInfo {
+  source: 'app-managed' | 'system';
+}
+
 export interface DownloadUpdate {
   task: DownloadTask;
   queue: DownloadTask[];
@@ -109,10 +122,17 @@ export interface FolderListing {
 export interface YtdlpApi {
   addDownload(payload: AddDownloadPayload): Promise<DownloadTask>;
   retryDownload(taskId: string): Promise<DownloadTask>;
+  cancelDownload(taskId: string): Promise<DownloadTask>;
   removeDownload(taskId: string): Promise<DownloadTask[]>;
   getQueue(): Promise<DownloadTask[]>;
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<AppSettings>;
+  getYtdlpBinaryInfo(): Promise<YtdlpBinaryInfo>;
+  updateYtdlpBinary(): Promise<YtdlpBinaryInfo>;
+  findYtdlpBinaries(): Promise<YtdlpBinaryCandidate[]>;
+  installYtdlpBinary(channel: YtdlpReleaseChannel): Promise<YtdlpBinaryInfo>;
+  getYtdlpLatestRelease(channel: YtdlpReleaseChannel): Promise<string>;
+  chooseYtdlpBinary(): Promise<string | null>;
   getEffectiveOptionsPreview(): Promise<string>;
   listFolderDirectories(currentPath: string): Promise<FolderListing>;
   suggestFolderDirectories(inputPath: string): Promise<FolderEntry[]>;

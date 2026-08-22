@@ -1210,8 +1210,13 @@ label.settings-option {
   line-height: 1.4;
 }
 
-.task-log {
+.task-log-wrap {
   grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+}
+
+.task-log {
   max-height: 260px;
   margin: 2px 0 0;
   overflow: auto;
@@ -1223,6 +1228,70 @@ label.settings-option {
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.task-log-jump {
+  justify-self: end;
+}
+
+.task-log-jump[hidden] {
+  display: none;
+}
+
+.http-403-recommendations {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: #fff7ed;
+  padding: 12px;
+}
+
+.http-403-recommendations h3,
+.http-403-recommendations p {
+  margin: 0;
+}
+
+.http-403-recommendations h3 {
+  color: #9a3412;
+  font-size: 14px;
+}
+
+.http-403-recommendations p {
+  color: #9a3412;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.http-403-recommendations .task-actions {
+  margin-top: 2px;
+}
+
+.ytdlp-candidates {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ytdlp-candidates li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #dbe3ea;
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 8px;
+  color: #475467;
+  font-size: 12px;
+}
+
+.ytdlp-candidates span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .progress-track {
@@ -1526,6 +1595,22 @@ label.settings-option {
 [data-theme='dark'] .task-action.danger-action:hover {
   background: #7f1d1d;
   color: #fee2e2;
+}
+
+[data-theme='dark'] .http-403-recommendations {
+  border-color: #92400e;
+  background: #451a03;
+}
+
+[data-theme='dark'] .http-403-recommendations h3,
+[data-theme='dark'] .http-403-recommendations p {
+  color: #fed7aa;
+}
+
+[data-theme='dark'] .ytdlp-candidates li {
+  border-color: #4b5563;
+  background: #26364d;
+  color: #d1d5db;
 }
 
 [data-theme='dark'] .task-title {

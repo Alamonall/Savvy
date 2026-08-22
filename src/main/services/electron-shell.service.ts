@@ -117,6 +117,20 @@ export class ElectronShellService {
     return this.settingsService.importConfigText(configText);
   }
 
+  /** Открывает системный диалог для выбора установленного пользователем yt-dlp. */
+  async chooseYtdlpBinary(): Promise<string | null> {
+    const options: Electron.OpenDialogOptions = {
+      defaultPath: homedir(),
+      filters: [{ name: 'yt-dlp', extensions: ['exe', '*'] }],
+      properties: ['openFile']
+    };
+    const result = this.mainWindow
+      ? await dialog.showOpenDialog(this.mainWindow, options)
+      : await dialog.showOpenDialog(options);
+
+    return result.canceled ? null : (result.filePaths.at(0) ?? null);
+  }
+
   async importConfigFileByPath(filePath: string): Promise<AppSettings> {
     const normalizedPath = filePath.trim();
     if (!normalizedPath) {

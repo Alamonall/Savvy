@@ -1,4 +1,13 @@
-import type { AppSettings, DownloadTask, FolderEntry, FolderListing } from '../../shared/types';
+import type {
+  AppSettings,
+  DownloadUpdate,
+  DownloadTask,
+  FolderEntry,
+  FolderListing,
+  YtdlpBinaryCandidate,
+  YtdlpBinaryInfo,
+  YtdlpReleaseChannel
+} from '../../shared/types';
 import './styles.css';
 
 type Tab = 'queue' | 'settings';
@@ -60,6 +69,11 @@ type FolderPickerState = {
   pathDraft: string;
   suggestionRequestId: number;
 };
+type TaskLogScrollState = {
+  taskId: string;
+  scrollTop: number;
+  followsUpdates: boolean;
+};
 
 const COLLAPSED_DAYS_KEY = 'ytdlp-collapsed-days';
 const COLLAPSED_SETTINGS_SECTIONS_KEY = 'ytdlp-collapsed-settings-sections';
@@ -83,6 +97,11 @@ let pendingSelectedTaskId: string | null = null;
 let urlDraft = '';
 let addMessage: string | null = null;
 let settingsMessage: string | null = null;
+let ytdlpBinaryInfo: YtdlpBinaryInfo = { path: null, version: null };
+let ytdlpCandidates: YtdlpBinaryCandidate[] = [];
+let isYtdlpUpdateInProgress = false;
+let isYtdlpLatestReleaseCheckInProgress = false;
+let ytdlpLatestReleaseVersion: string | null = null;
 let effectiveOptionsPreview = '';
 let textConfigDraft: string | null = null;
 let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
@@ -94,6 +113,8 @@ let theme: Theme = readTheme();
 let cookiesSource: CookiesSource = readCookiesSource();
 let settingsSearchQuery = '';
 let settings: AppSettings = {
+  ytdlpPath: '',
+  ytdlpReleaseChannel: 'stable',
   downloadDir: '',
   maxConcurrentDownloads: 1,
   inlineConfigText: '',
@@ -871,6 +892,7 @@ function installBrowserPreviewApi(): void {
         url: payload.url,
         title: payload.url,
         optionsText: payload.optionsText,
+        effectiveConfigText: 'Browser preview: конфигурация доступна только в Electron.',
         downloadDir: payload.downloadDir.trim() || previewSettings.downloadDir || 'Browser preview',
         status: 'running',
         createdAt: now,
@@ -907,6 +929,20 @@ function installBrowserPreviewApi(): void {
 
       return task;
     },
+    async cancelDownload(taskId) {
+      const task = previewQueue.find((item) => item.id === taskId);
+
+      if (!task || (task.status !== 'queued' && task.status !== 'running')) {
+        throw new Error('Можно отменить только ожидающую или активную задачу.');
+      }
+
+      task.status = 'cancelled';
+      task.finishedAt = Date.now();
+      task.log = [...task.log, 'Preview-задача отменена.'];
+      emitQueueUpdate(task);
+
+      return task;
+    },
     async removeDownload(taskId) {
       previewQueue = previewQueue.filter((task) => task.id !== taskId);
       return previewQueue;
@@ -920,6 +956,39 @@ function installBrowserPreviewApi(): void {
     async updateSettings(nextSettings) {
       previewSettings = { ...nextSettings };
       return previewSettings;
+    },
+    async getYtdlpBinaryInfo() {
+      return {
+        path: previewSettings.ytdlpPath || 'Browser preview',
+        version: 'preview'
+      };
+    },
+    async updateYtdlpBinary() {
+      return {
+        path: previewSettings.ytdlpPath || 'Browser preview',
+        version: 'preview'
+      };
+    },
+    async findYtdlpBinaries() {
+      return [
+        {
+          path: previewSettings.ytdlpPath || 'Browser preview',
+          version: 'preview',
+          source: 'system' as const
+        }
+      ];
+    },
+    async installYtdlpBinary() {
+      return {
+        path: 'Browser preview',
+        version: 'preview'
+      };
+    },
+    async getYtdlpLatestRelease() {
+      return 'preview-latest';
+    },
+    async chooseYtdlpBinary() {
+      throw new Error('Выбор бинарника доступен только в Electron.');
     },
     async getEffectiveOptionsPreview() {
       return buildEffectiveOptionsPreview(previewSettings);
@@ -1018,7 +1087,8 @@ function formatStatus(status: DownloadTask['status']): string {
     queued: 'В очереди',
     running: 'Скачивается',
     done: 'Готово',
-    failed: 'Ошибка'
+    failed: 'Ошибка',
+    cancelled: 'Отменено'
   };
 
   return labels[status];
@@ -1036,18 +1106,106 @@ function renderTaskLog(task: DownloadTask): string {
   const logText = task.log.length ? task.log.slice(-120).join('\n') : 'Лог пока пуст.';
 
   return `
-    <pre class="task-log" aria-label="Лог задачи">${escapeHtml(
-      [
-        `Ссылка: ${task.url}`,
-        `Название: ${task.title || task.url}`,
-        `Папка: ${task.downloadDir}`,
-        `Аргументы: ${task.optionsText || 'без дополнительных аргументов'}`,
-        ...(task.userMessage ? ['', `Причина: ${task.userMessage}`] : []),
-        '',
-        logText
-      ].join('\n')
-    )}</pre>
+    <div class="task-log-wrap">
+      <pre class="task-log" data-task-log="${task.id}" aria-label="Лог задачи">${escapeHtml(
+        [
+          `Ссылка: ${task.url}`,
+          `Название: ${task.title || task.url}`,
+          `Папка: ${task.downloadDir}`,
+          `Аргументы запуска: ${task.optionsText || 'без дополнительных аргументов'}`,
+          `Конфиг yt-dlp:\n${task.effectiveConfigText || 'не сохранён для старой задачи'}`,
+          ...(task.userMessage ? ['', `Причина: ${task.userMessage}`] : []),
+          '',
+          logText
+        ].join('\n')
+      )}</pre>
+      <button class="task-action task-log-jump" data-scroll-task-log="${task.id}" type="button" hidden>К последним строкам</button>
+    </div>
+    ${renderHttp403Recommendations(task)}
   `;
+}
+
+/** Показывает безопасные следующие шаги только для задачи, завершившейся отказом HTTP 403. */
+function renderHttp403Recommendations(task: DownloadTask): string {
+  if (!/HTTP Error 403:\s*Forbidden/i.test(task.log.join('\n'))) {
+    return '';
+  }
+
+  return `
+    <section class="http-403-recommendations" aria-label="Рекомендации по HTTP 403">
+      <h3>Как исправить HTTP 403</h3>
+      <p>Попробуй один шаг, затем повтори задачу: так будет понятно, какая настройка помогла.</p>
+      <div class="task-actions">
+        <button class="task-action" data-recommend-403-cookies="${task.id}" type="button">Настроить cookies</button>
+        <button class="task-action" data-recommend-403-throttle="${task.id}" type="button">Снизить частоту и повторить</button>
+        <button class="task-action" data-recommend-403-network type="button">Проверить сеть или proxy</button>
+        <button class="task-action" data-recommend-403-update type="button">Обновить yt-dlp</button>
+      </div>
+    </section>
+  `;
+}
+
+/** Определяет, должен ли открытый журнал следовать за новыми строками. */
+function isTaskLogAtBottom(taskLog: HTMLPreElement): boolean {
+  const bottomThreshold = 24;
+  return taskLog.scrollHeight - taskLog.clientHeight - taskLog.scrollTop <= bottomThreshold;
+}
+
+/** Запоминает позицию журнала до перерисовки очереди. */
+function captureTaskLogScrollState(taskList: HTMLElement): TaskLogScrollState | null {
+  const taskLog = taskList.querySelector<HTMLPreElement>('[data-task-log]');
+  const taskId = taskLog?.dataset.taskLog;
+
+  if (!taskLog || !taskId) {
+    return null;
+  }
+
+  return {
+    taskId,
+    scrollTop: taskLog.scrollTop,
+    followsUpdates: isTaskLogAtBottom(taskLog)
+  };
+}
+
+/** Показывает кнопку возврата, только когда пользователь отключил live-прокрутку. */
+function updateTaskLogJumpButton(taskLog: HTMLPreElement): void {
+  const jumpButton =
+    taskLog.parentElement?.querySelector<HTMLButtonElement>('[data-scroll-task-log]');
+  if (jumpButton) {
+    jumpButton.hidden = isTaskLogAtBottom(taskLog);
+  }
+}
+
+/** Прокручивает журнал к последней строке и снова включает live-прокрутку. */
+function scrollTaskLogToEnd(taskLog: HTMLPreElement): void {
+  taskLog.scrollTop = taskLog.scrollHeight;
+  updateTaskLogJumpButton(taskLog);
+}
+
+/** Восстанавливает ручную позицию или продолжает live-прокрутку после обновления очереди. */
+function restoreTaskLogScrollState(
+  taskList: HTMLElement,
+  previousState: TaskLogScrollState | null
+): void {
+  const taskLog = taskList.querySelector<HTMLPreElement>('[data-task-log]');
+  if (!taskLog) {
+    return;
+  }
+
+  if (
+    !previousState ||
+    previousState.taskId !== taskLog.dataset.taskLog ||
+    previousState.followsUpdates
+  ) {
+    scrollTaskLogToEnd(taskLog);
+    return;
+  }
+
+  taskLog.scrollTop = Math.min(
+    previousState.scrollTop,
+    Math.max(0, taskLog.scrollHeight - taskLog.clientHeight)
+  );
+  updateTaskLogJumpButton(taskLog);
 }
 
 function isUrlInputActive(): boolean {
@@ -1339,6 +1497,24 @@ function isSettingsOptionMatching(option: SettingsOption, query: string): boolea
   return searchableText.includes(query);
 }
 
+/** Раскрывает категорию настройки и прокручивает к ней после смены вкладки. */
+function revealSettingsSection(optionId: string): void {
+  const sectionIndex = SETTINGS_OPTION_GROUPS.findIndex((group) =>
+    group.options.some(
+      (option) => (option.kind === 'exclusive' ? option.id : option.key) === optionId
+    )
+  );
+  if (sectionIndex < 0) {
+    return;
+  }
+
+  collapsedSettingsSections.delete(sectionIndex);
+  saveCollapsedSettingsSections();
+  render();
+  const section = document.querySelector<HTMLElement>(`[data-settings-section="${sectionIndex}"]`);
+  section?.scrollIntoView({ block: 'start' });
+}
+
 function renderSettingsSearch(): string {
   return `
     <div class="panel settings-search-panel">
@@ -1483,10 +1659,62 @@ function renderSettingsUiPanel(): string {
         <option value="/tmp"></option>
       </datalist>
       ${renderedGroups || '<p class="settings-search-empty">Ничего не найдено.</p>'}
-      <section class="panel settings-panel settings-list-panel settings-actions-panel">
-        <button class="danger" id="clear-history" type="button">Очистить историю</button>
+      <section class="panel settings-panel settings-list-panel">
+        <div class="section-head">
+          <h2>Бинарник yt-dlp</h2>
+          <span>поиск и установка</span>
+        </div>
+        <div class="inherited-box">
+          ${
+            settings.ytdlpPath
+              ? `
+                <p>Выбранный файл: ${escapeHtml(settings.ytdlpPath)}</p>
+                <p>Версия yt-dlp: ${escapeHtml(ytdlpBinaryInfo.version || 'не определена')}</p>
+              `
+              : `
+                <p>Файл для обновления не выбран.</p>
+                <p>Для скачивания используется найденный в системе yt-dlp: ${escapeHtml(ytdlpBinaryInfo.path || 'не найден')}.</p>
+              `
+          }
+          <p>Последняя версия ${escapeHtml(settings.ytdlpReleaseChannel)}: ${escapeHtml(ytdlpLatestReleaseVersion || 'не проверена')}.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost bordered" id="find-ytdlp-binaries" type="button" ${isYtdlpUpdateInProgress ? 'disabled' : ''}>Найти yt-dlp</button>
+          <button class="ghost bordered" id="check-ytdlp-latest-release" type="button" ${isYtdlpLatestReleaseCheckInProgress ? 'disabled' : ''}>${isYtdlpLatestReleaseCheckInProgress ? 'Проверка…' : 'Проверить последнюю версию'}</button>
+          <button class="ghost bordered" id="choose-ytdlp-binary" type="button" ${isYtdlpUpdateInProgress ? 'disabled' : ''}>Выбрать файл yt-dlp</button>
+          <button class="ghost bordered" id="reset-ytdlp-binary" type="button" ${settings.ytdlpPath ? '' : 'hidden'}>Сбросить выбор</button>
+          <button class="primary" id="update-ytdlp-binary" type="button" ${isYtdlpUpdateInProgress || !settings.ytdlpPath ? 'disabled' : ''}>${isYtdlpUpdateInProgress ? 'Обновление…' : 'Обновить выбранный yt-dlp'}</button>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost bordered" data-install-ytdlp-channel="stable" type="button" ${isYtdlpUpdateInProgress ? 'disabled' : ''}>Установить stable</button>
+          <button class="ghost bordered" data-install-ytdlp-channel="nightly" type="button" ${isYtdlpUpdateInProgress ? 'disabled' : ''}>Установить nightly</button>
+        </div>
+        ${renderYtdlpCandidates()}
       </section>
+      <button class="danger" id="clear-history" type="button">Очистить историю</button>
     </section>
+  `;
+}
+
+/** Рендерит найденные исполняемые файлы, чтобы пользователь выбрал версию осознанно. */
+function renderYtdlpCandidates(): string {
+  if (!ytdlpCandidates.length) {
+    return '';
+  }
+
+  return `
+    <ul class="ytdlp-candidates" aria-label="Найденные бинарники yt-dlp">
+      ${ytdlpCandidates
+        .map(
+          (candidate) => `
+            <li>
+              <span>${escapeHtml(candidate.path || '')} · ${escapeHtml(candidate.version || 'версия не определена')} · ${candidate.source === 'app-managed' ? 'управляется Savvy' : 'системный'}</span>
+              <button class="ghost bordered" data-use-ytdlp-binary="${escapeHtml(candidate.path || '')}" type="button">Использовать</button>
+            </li>
+          `
+        )
+        .join('')}
+    </ul>
   `;
 }
 
@@ -1778,7 +2006,11 @@ function getUrlGroupTitle(url: string, tasks: DownloadTask[]): string {
     (task) => task.status === 'done' && task.title && task.title !== task.url
   );
 
-  return successfulTask?.title ?? tasks.find((task) => task.title)?.title ?? url;
+  return (
+    successfulTask?.title ??
+    tasks.find((task) => task.title && task.title !== task.url)?.title ??
+    url
+  );
 }
 
 function getSuccessfulTask(tasks: DownloadTask[]): DownloadTask | undefined {
@@ -1786,12 +2018,15 @@ function getSuccessfulTask(tasks: DownloadTask[]): DownloadTask | undefined {
 }
 
 function renderTaskActions(task: DownloadTask): string {
+  const canCancel = task.status === 'queued' || task.status === 'running';
+
   return `
     <div class="task-actions">
       <button class="task-action" data-open-url="${task.id}" type="button">Ссылка</button>
       <button class="task-action" data-open-folder="${task.id}" type="button">Папка</button>
       <button class="task-action" data-open-log="${task.id}" type="button">Лог</button>
-      <button class="task-action" data-retry-task="${task.id}" type="button">Снова</button>
+      ${canCancel ? `<button class="task-action danger-action" data-cancel-task="${task.id}" type="button">Отменить</button>` : ''}
+      ${!canCancel ? `<button class="task-action" data-retry-task="${task.id}" type="button">Снова</button>` : ''}
       <button class="task-action danger-action" data-remove-task="${task.id}" type="button">Удалить</button>
     </div>
   `;
@@ -1807,7 +2042,9 @@ function renderUrlTaskGroupMarkup(
   const isExpanded = expandedUrlGroups[groupKey] === true;
   const status = getUrlGroupStatus(tasks);
   const title = getUrlGroupTitle(url, tasks);
-  const successfulTask = getSuccessfulTask(tasks);
+  const actionableTask =
+    tasks.find((task) => task.status === 'queued' || task.status === 'running') ??
+    getSuccessfulTask(tasks);
 
   return `
     <div class="task-url-group">
@@ -1824,7 +2061,7 @@ function renderUrlTaskGroupMarkup(
             <span class="status ${status}">${formatStatus(status)}</span>
           </span>
         </button>
-        ${successfulTask ? renderTaskActions(successfulTask) : ''}
+        ${actionableTask ? renderTaskActions(actionableTask) : ''}
       </div>
       <div class="task-url-group-items ${isExpanded ? '' : 'collapsed'}">
         ${isExpanded ? tasks.map((task) => renderTaskMarkup(task, selectedTask)).join('') : ''}
@@ -1936,6 +2173,7 @@ function refreshQueueView(): void {
     ? (queue.find((task) => task.id === selectedTaskId) ?? null)
     : null;
   const previousScrollTop = taskList.scrollTop;
+  const previousTaskLogScrollState = captureTaskLogScrollState(taskList);
 
   queueCount.textContent = formatQueueCount(visibleQueue);
   queueMetaDir.textContent = `Папка: ${settings.downloadDir || 'не выбрана'}`;
@@ -1944,6 +2182,7 @@ function refreshQueueView(): void {
   queueMessage.style.display = addMessage ? 'block' : 'none';
   taskList.innerHTML = renderTaskListMarkup(queue, selectedTask);
   taskList.scrollTop = previousScrollTop;
+  restoreTaskLogScrollState(taskList, previousTaskLogScrollState);
 
   bindQueueTaskEvents();
   bindQueueGroupEvents();
@@ -1977,6 +2216,10 @@ function toggleTheme(): void {
 }
 
 function render(): void {
+  const previousTaskList = document.querySelector<HTMLElement>('#task-list');
+  const previousTaskLogScrollState = previousTaskList
+    ? captureTaskLogScrollState(previousTaskList)
+    : null;
   const visibleQueue = getVisibleQueue();
   const selectedTask = selectedTaskId
     ? (queue.find((task) => task.id === selectedTaskId) ?? null)
@@ -2053,6 +2296,10 @@ function render(): void {
   `;
 
   bindEvents();
+  const taskList = document.querySelector<HTMLElement>('#task-list');
+  if (taskList) {
+    restoreTaskLogScrollState(taskList, previousTaskLogScrollState);
+  }
 }
 
 function bindSettingsEvents(): void {
@@ -2209,7 +2456,172 @@ function bindSettingsEvents(): void {
     void clearHistory();
   });
 
+  document
+    .querySelector<HTMLButtonElement>('#find-ytdlp-binaries')
+    ?.addEventListener('click', () => {
+      void findYtdlpBinaries();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('#check-ytdlp-latest-release')
+    ?.addEventListener('click', () => {
+      void checkYtdlpLatestRelease();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('#choose-ytdlp-binary')
+    ?.addEventListener('click', () => {
+      void chooseYtdlpBinary();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('#update-ytdlp-binary')
+    ?.addEventListener('click', () => {
+      void updateYtdlpBinary();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('#reset-ytdlp-binary')
+    ?.addEventListener('click', () => {
+      void resetYtdlpBinarySelection();
+    });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-install-ytdlp-channel]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const channel = button.dataset.installYtdlpChannel;
+      if (channel === 'stable' || channel === 'nightly') {
+        void installYtdlpBinary(channel);
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-use-ytdlp-binary]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const ytdlpPath = button.dataset.useYtdlpBinary;
+      if (ytdlpPath) {
+        void useFoundYtdlpBinary(ytdlpPath);
+      }
+    });
+  });
+
   bindConfigModalEvents();
+}
+
+/** Запрашивает в main-процессе путь и версию бинарника, который будет использоваться. */
+async function refreshYtdlpBinaryInfo(): Promise<void> {
+  ytdlpBinaryInfo = await window.ytdlp.getYtdlpBinaryInfo();
+}
+
+/** Запрашивает опубликованную версию выбранного канала, не изменяя установленный бинарник. */
+async function checkYtdlpLatestRelease(): Promise<void> {
+  isYtdlpLatestReleaseCheckInProgress = true;
+  render();
+
+  try {
+    ytdlpLatestReleaseVersion = await window.ytdlp.getYtdlpLatestRelease(
+      settings.ytdlpReleaseChannel
+    );
+    settingsMessage = `Последняя ${settings.ytdlpReleaseChannel}-версия yt-dlp: ${ytdlpLatestReleaseVersion}.`;
+  } catch (error) {
+    settingsMessage =
+      error instanceof Error ? error.message : 'Не удалось проверить последнюю версию yt-dlp.';
+  } finally {
+    isYtdlpLatestReleaseCheckInProgress = false;
+    render();
+  }
+}
+
+/** Ищет доступные yt-dlp и отображает их без автоматической смены активного файла. */
+async function findYtdlpBinaries(): Promise<void> {
+  try {
+    ytdlpCandidates = await window.ytdlp.findYtdlpBinaries();
+    settingsMessage = ytdlpCandidates.length
+      ? `Найдено бинарников yt-dlp: ${ytdlpCandidates.length}. Выбери подходящий.`
+      : 'yt-dlp не найден. Установи официальный stable или nightly-бинарник.';
+  } catch (error) {
+    settingsMessage = error instanceof Error ? error.message : 'Не удалось найти yt-dlp.';
+  }
+
+  render();
+}
+
+/** Сохраняет явно выбранный из результатов поиска бинарник. */
+async function useFoundYtdlpBinary(ytdlpPath: string): Promise<void> {
+  await updateLocalSettings({ ytdlpPath });
+  await refreshYtdlpBinaryInfo();
+  settingsMessage = 'Выбран найденный бинарник yt-dlp.';
+  render();
+}
+
+/** Устанавливает проверенный официальный standalone-бинарник и делает его активным. */
+async function installYtdlpBinary(channel: YtdlpReleaseChannel): Promise<void> {
+  isYtdlpUpdateInProgress = true;
+  render();
+
+  try {
+    const binaryInfo = await window.ytdlp.installYtdlpBinary(channel);
+    if (!binaryInfo.path) {
+      throw new Error('После установки путь к yt-dlp не определён.');
+    }
+
+    await updateLocalSettings({ ytdlpPath: binaryInfo.path, ytdlpReleaseChannel: channel });
+    ytdlpBinaryInfo = binaryInfo;
+    settingsMessage = `Установлен официальный ${channel}-бинарник yt-dlp версии ${binaryInfo.version || 'не определена'}.`;
+  } catch (error) {
+    settingsMessage = error instanceof Error ? error.message : 'Не удалось установить yt-dlp.';
+  } finally {
+    isYtdlpUpdateInProgress = false;
+    render();
+  }
+}
+
+/** Открывает выбор системного yt-dlp и сохраняет выбранный путь в настройках. */
+async function chooseYtdlpBinary(): Promise<void> {
+  try {
+    const ytdlpPath = await window.ytdlp.chooseYtdlpBinary();
+    if (!ytdlpPath) {
+      return;
+    }
+
+    await updateLocalSettings({ ytdlpPath });
+    await refreshYtdlpBinaryInfo();
+    settingsMessage = 'Системный бинарник yt-dlp выбран.';
+  } catch (error) {
+    settingsMessage =
+      error instanceof Error ? error.message : 'Не удалось выбрать бинарник yt-dlp.';
+  }
+
+  render();
+}
+
+/** Сбрасывает ручной путь и возвращает загрузки к бинарнику, найденному в системе. */
+async function resetYtdlpBinarySelection(): Promise<void> {
+  await updateLocalSettings({ ytdlpPath: '' });
+  await refreshYtdlpBinaryInfo();
+  settingsMessage = 'Ручной выбор yt-dlp сброшен.';
+  render();
+}
+
+/** Обновляет выбранный yt-dlp через его встроенную команду обновления. */
+async function updateYtdlpBinary(): Promise<void> {
+  if (!settings.ytdlpPath) {
+    settingsMessage = 'Сначала выбери файл yt-dlp для обновления.';
+    render();
+    return;
+  }
+
+  isYtdlpUpdateInProgress = true;
+  render();
+
+  try {
+    ytdlpBinaryInfo = await window.ytdlp.updateYtdlpBinary();
+    settingsMessage = `yt-dlp обновлён до версии ${ytdlpBinaryInfo.version || 'не определена'}.`;
+  } catch (error) {
+    settingsMessage = error instanceof Error ? error.message : 'Не удалось обновить yt-dlp.';
+  } finally {
+    isYtdlpUpdateInProgress = false;
+    render();
+  }
 }
 
 function bindConfigModalEvents(): void {
@@ -2282,11 +2694,63 @@ function bindQueueTaskEvents(): void {
     });
   });
 
+  document.querySelectorAll<HTMLButtonElement>('[data-cancel-task]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const taskId = button.dataset.cancelTask;
+      if (taskId) {
+        void cancelDownload(taskId);
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-recommend-403-cookies]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const taskId = button.dataset.recommend403Cookies;
+      if (taskId) {
+        void applyHttp403CookiesRecommendation(taskId);
+      }
+    });
+  });
+
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-recommend-403-throttle]')
+    .forEach((button) => {
+      button.addEventListener('click', () => {
+        const taskId = button.dataset.recommend403Throttle;
+        if (taskId) {
+          void applyHttp403ThrottleRecommendation(taskId);
+        }
+      });
+    });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-recommend-403-network]').forEach((button) => {
+    button.addEventListener('click', openHttp403NetworkRecommendation);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-recommend-403-update]').forEach((button) => {
+    button.addEventListener('click', openHttp403UpdateRecommendation);
+  });
+
   document.querySelectorAll<HTMLButtonElement>('[data-remove-task]').forEach((button) => {
     button.addEventListener('click', () => {
       const taskId = button.dataset.removeTask;
       if (taskId) {
         void removeDownload(taskId);
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLPreElement>('[data-task-log]').forEach((taskLog) => {
+    taskLog.addEventListener('scroll', () => {
+      updateTaskLogJumpButton(taskLog);
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-scroll-task-log]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const taskLog = button.parentElement?.querySelector<HTMLPreElement>('[data-task-log]');
+      if (taskLog) {
+        scrollTaskLogToEnd(taskLog);
       }
     });
   });
@@ -2745,7 +3209,7 @@ async function saveTextConfig(): Promise<void> {
 
 async function clearHistory(): Promise<void> {
   queue = await window.ytdlp.clearHistory();
-  selectedTaskId = queue.at(0)?.id ?? null;
+  selectedTaskId = null;
   render();
 }
 
@@ -2787,11 +3251,79 @@ async function retryDownload(taskId: string): Promise<void> {
   render();
 }
 
+/**
+ * Подготавливает безопасный режим cookies и переводит пользователя к явному выбору браузера.
+ * Cookies не копируются и не попадают в текстовую конфигурацию.
+ */
+async function applyHttp403CookiesRecommendation(taskId: string): Promise<void> {
+  cookiesSource = 'browser';
+  localStorage.setItem(COOKIES_SOURCE_KEY, cookiesSource);
+  currentTab = 'settings';
+  settingsMode = 'ui';
+  settingsSearchQuery = 'cookies';
+  settingsMessage = `Для повтора задачи ${taskId.slice(0, 8)} выбери браузер, где уже выполнен вход в сервис, затем нажми «Снова» у задачи.`;
+  revealSettingsSection('cookies-source');
+
+  try {
+    await updateLocalSettings({ cookiesFile: '' });
+  } catch (error) {
+    settingsMessage =
+      error instanceof Error ? error.message : 'Не удалось сохранить настройку cookies.';
+    revealSettingsSection('cookies-source');
+  }
+}
+
+/** Добавляет короткую паузу между запросами и повторяет задачу с сохранённой настройкой. */
+async function applyHttp403ThrottleRecommendation(taskId: string): Promise<void> {
+  const recommendedOption = '--sleep-requests 1';
+  const additionalOptions = settings.additionalOptions.includes(recommendedOption)
+    ? settings.additionalOptions
+    : [settings.additionalOptions.trim(), recommendedOption].filter(Boolean).join(' ');
+
+  await updateLocalSettings({ additionalOptions });
+  settingsMessage =
+    'Добавлена пауза 1 секунда между запросами. Повтор создаётся с этой настройкой.';
+  await retryDownload(taskId);
+}
+
+/** Открывает настройку сети, не подставляя proxy или VPN без явного выбора пользователя. */
+function openHttp403NetworkRecommendation(): void {
+  currentTab = 'settings';
+  settingsMode = 'ui';
+  settingsSearchQuery = 'Proxy';
+  settingsMessage =
+    'Укажи только свой разрешённый proxy или оставь поле пустым, затем повтори задачу.';
+  render();
+}
+
+/** Открывает управление выбранным бинарником для обновления без изменения способа его установки. */
+function openHttp403UpdateRecommendation(): void {
+  currentTab = 'settings';
+  settingsMode = 'ui';
+  settingsSearchQuery = 'Бинарник yt-dlp';
+  settingsMessage = 'Выбери файл yt-dlp, обнови его и затем повтори задачу.';
+  render();
+}
+
+/** Отменяет задачу через main-процесс и показывает её финальный статус в очереди. */
+async function cancelDownload(taskId: string): Promise<void> {
+  try {
+    const task = await window.ytdlp.cancelDownload(taskId);
+    selectedTaskId = task.id;
+    currentTab = 'queue';
+    render();
+  } catch (error) {
+    addMessage = error instanceof Error ? error.message : 'Не удалось отменить задачу.';
+    currentTab = 'queue';
+    render();
+  }
+}
+
 async function removeDownload(taskId: string): Promise<void> {
   try {
     queue = await window.ytdlp.removeDownload(taskId);
     if (selectedTaskId === taskId) {
-      selectedTaskId = getVisibleQueue().at(0)?.id ?? queue.at(0)?.id ?? null;
+      selectedTaskId = null;
     }
     render();
   } catch (error) {
@@ -2801,10 +3333,20 @@ async function removeDownload(taskId: string): Promise<void> {
   }
 }
 
-window.ytdlp.onQueueUpdate((update) => {
+/**
+ * Применяет фоновое обновление очереди, сохраняя открытый лог пользователя.
+ * Выбор закрывается только когда задача больше недоступна в текущем фильтре.
+ */
+function applyQueueUpdate(update: DownloadUpdate): void {
   queue = update.queue;
-  selectedTaskId = update.task.id;
+  if (selectedTaskId && !getVisibleQueue().some((task) => task.id === selectedTaskId)) {
+    selectedTaskId = null;
+  }
   refreshViewAfterQueueUpdate();
+}
+
+window.ytdlp.onQueueUpdate((update) => {
+  applyQueueUpdate(update);
 });
 
 applyTheme();
@@ -2825,6 +3367,7 @@ async function initializeApp(): Promise<void> {
           : 'none';
     }
     effectiveOptionsPreview = await window.ytdlp.getEffectiveOptionsPreview();
+    await refreshYtdlpBinaryInfo();
     queue = await window.ytdlp.getQueue();
   } catch (error) {
     startupError =

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, extname, join } from 'node:path';
@@ -12,12 +12,9 @@ const { app } = require('electron') as typeof import('electron');
 
 type QueueUpdateSender = (update: DownloadUpdate) => void;
 type FailureDetails = {
-  isRetryable: boolean;
   userMessage: string | null;
 };
 
-const MAX_HTTP_403_AUTO_RETRIES = 2;
-const HTTP_403_RETRY_DELAY_MS = 2000;
 const YOUTUBE_JS_RUNTIME_MESSAGE =
   'YouTube не отдал видеоформаты: yt-dlp не смог решить n challenge. Добавь в дополнительные аргументы "--js-runtimes deno" или обнови yt-dlp/JS runtime.';
 const X_TIMEOUT_MESSAGE =
@@ -27,6 +24,7 @@ const X_TIMEOUT_MESSAGE =
 export class DownloadsService {
   private queue: DownloadTask[] = [];
   private readonly activeTaskIds = new Set<string>();
+  private readonly activeChildren = new Map<string, ChildProcess>();
   private readonly pendingUpdateTaskIds = new Set<string>();
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
   private sender: QueueUpdateSender | null = null;
@@ -84,15 +82,19 @@ export class DownloadsService {
       throw new Error('Эта ссылка уже добавлена.');
     }
 
+    const taskId = crypto.randomUUID();
+    const taskConfiguration = this.settingsService.buildTaskConfiguration(
+      taskId,
+      payload.optionsText
+    );
     const task: DownloadTask = {
-      id: crypto.randomUUID(),
+      id: taskId,
       url,
       title: url,
-      optionsText: this.settingsService.buildTaskOptionsText(payload.optionsText),
+      ...taskConfiguration,
       downloadDir: payload.downloadDir.trim() || this.settingsService.get().downloadDir,
       status: 'queued',
       createdAt: Date.now(),
-      autoRetryAttempt: 0,
       userMessage: null,
       log: ['Добавлено в очередь.']
     };
@@ -112,16 +114,17 @@ export class DownloadsService {
 
     const currentSettings = this.settingsService.get();
 
+    const newTaskId = crypto.randomUUID();
+    const taskConfiguration = this.settingsService.buildTaskConfiguration(newTaskId, '');
     const task: DownloadTask = {
-      id: crypto.randomUUID(),
+      id: newTaskId,
       url: originalTask.url,
-      title: originalTask.title,
-      optionsText: this.settingsService.buildTaskOptionsText(''),
+      title: originalTask.url,
+      ...taskConfiguration,
       downloadDir: currentSettings.downloadDir,
       status: 'queued',
       createdAt: Date.now(),
       progress: null,
-      autoRetryAttempt: 0,
       userMessage: null,
       log: ['Добавлено в очередь повторно с актуальными настройками.']
     };
@@ -156,6 +159,36 @@ export class DownloadsService {
     return this.cloneQueue();
   }
 
+  /** Отменяет ожидающую задачу или завершает запущенный процесс yt-dlp. */
+  cancel(taskId: string): DownloadTask {
+    const task = this.queue.find((item) => item.id === taskId);
+    if (!task) {
+      throw new Error('Задача не найдена.');
+    }
+
+    if (task.status !== 'queued' && task.status !== 'running') {
+      throw new Error('Можно отменить только ожидающую или активную задачу.');
+    }
+
+    task.status = 'cancelled';
+    task.finishedAt = Date.now();
+    task.userMessage = null;
+    task.log.push('Скачивание отменено пользователем.');
+    this.emitQueueUpdate(task);
+
+    if (task.startedAt === undefined) {
+      this.startNext();
+      return this.cloneTask(task);
+    }
+
+    const child = this.activeChildren.get(task.id);
+    if (!child || !child.kill('SIGTERM')) {
+      this.finishCancelledTask(task);
+    }
+
+    return this.cloneTask(task);
+  }
+
   startNext(): void {
     const settings = this.settingsService.get();
 
@@ -168,7 +201,9 @@ export class DownloadsService {
       task.status = 'running';
       task.startedAt = Date.now();
       this.activeTaskIds.add(task.id);
-      const ytdlpPath = this.binaryLocatorService.getYtdlpPath();
+      const ytdlpPath = this.binaryLocatorService.getYtdlpPath(
+        this.settingsService.get().ytdlpPath
+      );
 
       if (!ytdlpPath) {
         task.status = 'failed';
@@ -184,6 +219,7 @@ export class DownloadsService {
       task.userMessage = null;
       task.log.push(`Запуск yt-dlp в папке: ${task.downloadDir}`);
       task.log.push(`Используется бинарник: ${ytdlpPath}`);
+      task.log.push(`Конфигурация yt-dlp:\n${task.effectiveConfigText}`);
       this.emitQueueUpdate(task);
 
       const args = [...this.settingsService.parseOptions(task.optionsText), task.url];
@@ -191,22 +227,34 @@ export class DownloadsService {
         cwd: task.downloadDir,
         shell: false
       });
+      this.activeChildren.set(task.id, child);
 
       child.stdout.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
       child.stderr.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
 
       child.on('error', (error) => {
+        if (task.status === 'cancelled') {
+          this.finishCancelledTask(task);
+          return;
+        }
+
         task.status = 'failed';
         task.finishedAt = Date.now();
         task.userMessage =
           'Не удалось запустить yt-dlp. Проверь установку приложения и доступность бинарника.';
         task.log.push(`Ошибка запуска yt-dlp: ${error.message}`);
         this.activeTaskIds.delete(task.id);
+        this.activeChildren.delete(task.id);
         this.emitQueueUpdate(task);
         this.startNext();
       });
 
       child.on('close', (code) => {
+        if (task.status === 'cancelled') {
+          this.finishCancelledTask(task);
+          return;
+        }
+
         if (task.status !== 'failed' && code === 0) {
           task.status = 'done';
           task.progress = 100;
@@ -216,32 +264,6 @@ export class DownloadsService {
           task.log.push('Скачивание завершено.');
         } else if (task.status !== 'failed') {
           const failure = this.analyzeFailure(task);
-          const currentAttempt = task.autoRetryAttempt ?? 0;
-
-          if (failure.isRetryable && currentAttempt < MAX_HTTP_403_AUTO_RETRIES) {
-            const nextAttempt = currentAttempt + 1;
-            task.autoRetryAttempt = nextAttempt;
-            task.progress = null;
-            task.exitCode = code;
-            task.startedAt = undefined;
-            task.finishedAt = undefined;
-            task.status = 'queued';
-            task.userMessage =
-              failure.userMessage ??
-              'Источник временно отклонил запрос. Пробую скачать ещё раз автоматически.';
-            task.log.push(task.userMessage);
-            task.log.push(
-              `Автоповтор ${nextAttempt}/${MAX_HTTP_403_AUTO_RETRIES} через ${Math.floor(
-                HTTP_403_RETRY_DELAY_MS / 1000
-              )} сек.`
-            );
-
-            this.activeTaskIds.delete(task.id);
-            this.emitQueueUpdate(task);
-            setTimeout(() => this.startNext(), HTTP_403_RETRY_DELAY_MS);
-            return;
-          }
-
           task.status = 'failed';
           task.exitCode = code;
           task.finishedAt = Date.now();
@@ -250,10 +272,22 @@ export class DownloadsService {
         }
 
         this.activeTaskIds.delete(task.id);
+        this.activeChildren.delete(task.id);
         this.emitQueueUpdate(task);
         this.startNext();
       });
     }
+  }
+
+  /** Освобождает слот очереди после завершения отменённого процесса. */
+  private finishCancelledTask(task: DownloadTask): void {
+    if (!this.activeTaskIds.delete(task.id)) {
+      return;
+    }
+
+    this.activeChildren.delete(task.id);
+    this.emitQueueUpdate(task);
+    this.startNext();
   }
 
   private getHistoryPath(): string {
@@ -329,28 +363,24 @@ export class DownloadsService {
       /Requested format is not available/i.test(logText)
     ) {
       return {
-        isRetryable: false,
         userMessage: YOUTUBE_JS_RUNTIME_MESSAGE
       };
     }
 
     if (/HTTP Error 403:\s*Forbidden/i.test(logText)) {
       return {
-        isRetryable: true,
         userMessage:
-          'Сервер отклонил загрузку видео (HTTP 403). Обычно помогает повторная попытка, cookies из браузера или обновление yt-dlp.'
+          'Сервер отклонил загрузку видео (HTTP 403). Открой рекомендации в деталях задачи: они помогут безопасно настроить cookies, частоту запросов или сеть.'
       };
     }
 
     if (this.isXConnectionTimeout(logText)) {
       return {
-        isRetryable: false,
         userMessage: X_TIMEOUT_MESSAGE
       };
     }
 
     return {
-      isRetryable: false,
       userMessage: null
     };
   }
@@ -369,13 +399,13 @@ export class DownloadsService {
       }
 
       const title = this.parseTitleFromLogLine(line);
-      if (title) {
+      if (title && task.title === task.url) {
         task.title = title;
       }
 
       if (/HTTP Error 403:\s*Forbidden/i.test(line)) {
         task.userMessage =
-          'Сервер отклонил загрузку видео (HTTP 403). Обычно помогает повторная попытка, cookies из браузера или обновление yt-dlp.';
+          'Сервер отклонил загрузку видео (HTTP 403). Открой рекомендации в деталях задачи: они помогут безопасно настроить cookies, частоту запросов или сеть.';
       }
 
       if (
@@ -407,8 +437,9 @@ export class DownloadsService {
     const statusOrder: Record<DownloadTask['status'], number> = {
       running: 0,
       queued: 1,
-      failed: 2,
-      done: 3
+      cancelled: 2,
+      failed: 3,
+      done: 4
     };
 
     return this.queue
