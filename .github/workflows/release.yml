@@ -175,37 +175,19 @@ jobs:
           INITIAL_RELEASE_VERSION: ${{ env.INITIAL_RELEASE_VERSION }}
           RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'alpha' }}
         run: |
+          set -euo pipefail
+          # Версия пишется только в рабочую копию: правила репозитория запрещают прямые
+          # пуши в ветки, поэтому коммит с версией и CHANGELOG в master не создаётся.
           node --input-type=module -e "import fs from 'node:fs'; const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8')); packageJson.version = process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(packageJson, null, 2) + '\\n');"
-          npx conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0
+          npx conventional-changelog -p conventionalcommits -o release-notes.md -r 1
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add CHANGELOG.md package.json
+          git tag -a "v${RELEASE_VERSION}" -m "Релиз ${RELEASE_VERSION}"
+          git push origin "refs/tags/v${RELEASE_VERSION}"
           if [ "$RELEASE_CHANNEL" = "stable" ]; then
-            git commit -m "chore: подготовить стабильный релиз ${RELEASE_VERSION} [skip ci]"
-            git tag -a "v${RELEASE_VERSION}" -m "Релиз ${RELEASE_VERSION}"
-            git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
             gh release create "v${RELEASE_VERSION}" release-assets/* \
-              --title "${RELEASE_VERSION}" --generate-notes
+              --title "${RELEASE_VERSION}" --notes-file release-notes.md
           else
-            git commit -m "chore: подготовить prerelease ${RELEASE_VERSION} [skip ci]"
-            git tag -a "v${RELEASE_VERSION}" -m "Релиз ${RELEASE_VERSION}"
-            git push origin "HEAD:${GITHUB_REF_NAME}" --follow-tags
             gh release create "v${RELEASE_VERSION}" release-assets/* \
-              --title "${RELEASE_VERSION}" --prerelease --generate-notes
+              --title "${RELEASE_VERSION}" --prerelease --notes-file release-notes.md
           fi
-
-      - name: Обновить версию package.json
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        env:
-          RELEASE_VERSION: ${{ needs.version.outputs.version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node --input-type=module -e "import fs from 'node:fs'; const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8')); packageJson.version = process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(packageJson, null, 2) + '\\n');"
-          if git diff --quiet -- package.json; then
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package.json
-          git commit -m "chore: обновить версию до ${RELEASE_VERSION} [skip ci]"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
