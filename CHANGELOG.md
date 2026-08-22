@@ -1,3 +1,5 @@
+## [0.0.1-alpha.5](https://github.com/Alamonall/Savvy/compare/v0.0.1-alpha.4...v0.0.1-alpha.5) (2026-08-22)
+
 ## [0.0.1-alpha.4](https://github.com/Alamonall/Savvy/compare/v0.0.1-alpha.3...v0.0.1-alpha.4) (2026-07-26)
 
 ## [0.0.1-alpha.3](https://github.com/Alamonall/Savvy/compare/v0.0.1-alpha.2...v0.0.1-alpha.3) (2026-07-26)
