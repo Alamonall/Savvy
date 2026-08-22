@@ -5,7 +5,7 @@ import { URL } from 'node:url';
 
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
-test('electron-builder publishes mac update metadata to the nightly channel', () => {
+test('electron-builder publishes mac update metadata to the alpha channel', () => {
   assert.equal(packageJson.build.artifactName, '${name}-${version}-${os}-${arch}.${ext}');
 
   assert.equal(packageJson.repository.type, 'git');
@@ -16,7 +16,7 @@ test('electron-builder publishes mac update metadata to the nightly channel', ()
       provider: 'github',
       owner: 'Alamonall',
       repo: 'Savvy',
-      channel: 'nightly',
+      channel: 'alpha',
       releaseType: 'prerelease'
     }
   ]);
