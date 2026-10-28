@@ -26,6 +26,8 @@ const CONVENTIONAL_PREFIX_PATTERN = /^([a-z]+)(?:\([^)]*\))?!?:(.*)$/i;
 const MARKDOWN_LINK_PATTERN = /\[+([^\]]*)\]\([^)]*\)\]*/g;
 /** Хвост ` by автор in коммит`, который GitHub добавляет после текста коммита. */
 const BY_IN_SUFFIX_PATTERN = /\s+by\s+\S+(?:\s+in\s+\S+)?\s*$/i;
+/** Полный хвост авторства после кода: `by автор` или `by автор in коммит`. */
+const AUTHORSHIP_TAIL_PATTERN = /^by\s+\S+(?:\s+in\s+\S+)?$/i;
 /** Хвост ` by @автор in ...` без ссылки, если упоминание пришло как обычный текст. */
 const MENTION_SUFFIX_PATTERN = /\s+by\s+@[\w-]+(?:\s+in\s+\S+)?\s*$/i;
 
@@ -118,7 +120,10 @@ function parseChangeItem(content: string): ReleaseChange | null {
 function extractCommitText(content: string): string {
   const leadingCodeMatch = LEADING_CODE_PATTERN.exec(content);
   if (leadingCodeMatch && isCommitReference(content.slice(leadingCodeMatch[0].length))) {
-    return cleanText(leadingCodeMatch[1] ?? leadingCodeMatch[2] ?? '');
+    // Содержимое markdown-кода — буквальный текст, в нём `<tag>` не является HTML.
+    return leadingCodeMatch[1]
+      ? leadingCodeMatch[1].replace(/\s+/g, ' ').trim()
+      : cleanText(leadingCodeMatch[2] ?? '');
   }
 
   const hasLinks = /\]\([^)]*\)|<a\b/i.test(content);
@@ -134,7 +139,7 @@ function extractCommitText(content: string): string {
 /** Код в начале пункта — сообщение коммита, только если дальше нет ничего, кроме хвоста ` by автор in ...`. */
 function isCommitReference(rest: string): boolean {
   const cleanedRest = cleanText(rest.replace(MARKDOWN_LINK_PATTERN, '$1'));
-  return !cleanedRest || /^by\s/i.test(cleanedRest);
+  return !cleanedRest || AUTHORSHIP_TAIL_PATTERN.test(cleanedRest);
 }
 
 /** Удаляет HTML-теги, декодирует базовые сущности и схлопывает пробелы. */

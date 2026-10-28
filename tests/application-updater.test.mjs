@@ -117,6 +117,29 @@ test('ошибка фоновой проверки не переводит ид�
     'utf8'
   );
 
-  assert.match(updaterService, /updater\.on\('error', \(\) =>/);
   assert.doesNotMatch(updaterService, /isExplicitDownloadRequested/);
+  assert.match(updaterService, /status === 'downloaded'/);
+});
+
+test('отказ установки переводит состояние в ошибку с понятным текстом', async () => {
+  const updaterService = await readFile(
+    new URL('../src/main/services/application-updater.service.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(updaterService, /Не удалось установить обновление/);
+  assert.match(
+    updaterService,
+    /updater\.on\('error', \(error\) => this\.handleUpdaterError\(error\)\)/
+  );
+});
+
+test('скачивание дожидается выполняющейся проверки, чтобы не сменить цель updater', async () => {
+  const updaterService = await readFile(
+    new URL('../src/main/services/application-updater.service.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(updaterService, /pendingCheck/);
+  assert.match(updaterService, /await this\.pendingCheck/);
 });

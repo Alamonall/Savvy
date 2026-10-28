@@ -156,3 +156,15 @@ test('не обрезает описание, если пункт начинае
     { type: 'other', text: '--cookies теперь поддерживается' }
   ]);
 });
+
+test('не считает обычное продолжение «by default» авторским хвостом', () => {
+  assert.deepEqual(parseReleaseChanges('- `--cookies` by default включён'), [
+    { type: 'other', text: '--cookies by default включён' }
+  ]);
+});
+
+test('сохраняет литералы вида <tag> внутри markdown-кода коммита', () => {
+  assert.deepEqual(parseReleaseChanges('- `fix: preserve <video> tags` by [[a](https://x.y)]'), [
+    { type: 'fix', text: 'preserve <video> tags' }
+  ]);
+});

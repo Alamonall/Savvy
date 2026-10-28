@@ -25,6 +25,7 @@ export class ApplicationUpdaterService {
   private updater: AppUpdater | null = null;
   private sender: ApplicationUpdateSender | null = null;
   private checkTimer: NodeJS.Timeout | null = null;
+  private pendingCheck: Promise<void> | null = null;
   private state: Omit<ApplicationUpdateState, 'activeDownloadCount' | 'queuedDownloadCount'> = {
     status: 'idle',
     currentVersion: app.getVersion(),
@@ -82,7 +83,7 @@ export class ApplicationUpdaterService {
     }
 
     try {
-      await this.updater.checkForUpdates();
+      await this.runCheck();
     } catch (error) {
       throw new ApplicationUpdateError(
         `Не удалось проверить обновления: ${getErrorMessage(error)}`
@@ -93,6 +94,12 @@ export class ApplicationUpdaterService {
   /** Скачивает уже найденное обновление по явному действию пользователя или повторяет неудачное скачивание. */
   async download(): Promise<void> {
     if (!this.updater || (this.state.status !== 'available' && this.state.status !== 'error')) {
+      throw new ApplicationUpdateError('Обновление ещё не готово к скачиванию.');
+    }
+
+    // Проверка меняет цель updater: скачивание стартует только после неё, на актуальном состоянии.
+    await this.pendingCheck?.catch(() => undefined);
+    if (this.state.status !== 'available' && this.state.status !== 'error') {
       throw new ApplicationUpdateError('Обновление ещё не готово к скачиванию.');
     }
 
@@ -132,18 +139,32 @@ export class ApplicationUpdaterService {
     updater.on('update-available', (info) => this.handleUpdateAvailable(info));
     updater.on('download-progress', (progress) => this.handleDownloadProgress(progress));
     updater.on('update-downloaded', (info) => this.handleUpdateDownloaded(info));
-    // Событие error нужно только чтобы EventEmitter не бросил исключение: ошибку скачивания
-    // download() получает из отклонённого downloadUpdate(), а проверки сообщают её сами.
-    updater.on('error', () => undefined);
+    updater.on('error', (error) => this.handleUpdaterError(error));
   }
 
   /** Выполняет проверку без пользовательской ошибки, когда GitHub временно недоступен. */
   private async checkForUpdatesSilently(): Promise<void> {
     try {
-      await this.updater?.checkForUpdates();
+      await this.runCheck();
     } catch {
       // Автоматическая проверка не должна отвлекать пользователя сетевой ошибкой.
     }
+  }
+
+  /** Запускает проверку updater; одновременные вызовы разделяют один запрос. */
+  private runCheck(): Promise<void> {
+    if (this.pendingCheck) {
+      return this.pendingCheck;
+    }
+
+    const updater = this.updater;
+    const check = (updater ? updater.checkForUpdates() : Promise.resolve())
+      .then(() => undefined)
+      .finally(() => {
+        this.pendingCheck = null;
+      });
+    this.pendingCheck = check;
+    return check;
   }
 
   /** Запускает периодическую фоновую проверку; во время скачивания или готовой установки она пропускается. */
@@ -188,6 +209,23 @@ export class ApplicationUpdaterService {
       changes: parseReleaseChanges(info.releaseNotes),
       downloadPercent: 100,
       errorMessage: null
+    });
+  }
+
+  /**
+   * Событие error обязательно слушать, иначе EventEmitter бросит исключение. Ошибку скачивания
+   * даёт отклонённый downloadUpdate(), ошибки проверок сообщают сами проверки; здесь остаётся
+   * отказ установки, который updater сообщает только событием.
+   */
+  private handleUpdaterError(error: Error): void {
+    if (this.state.status !== 'downloaded') {
+      return;
+    }
+
+    this.updateState({
+      status: 'error',
+      downloadPercent: null,
+      errorMessage: `Не удалось установить обновление: ${getErrorMessage(error)}`
     });
   }
 
