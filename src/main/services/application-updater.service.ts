@@ -137,6 +137,7 @@ export class ApplicationUpdaterService {
   /** Подписывается на события electron-updater и переводит их в стабильный UI-контракт. */
   private registerUpdaterEvents(updater: AppUpdater): void {
     updater.on('update-available', (info) => this.handleUpdateAvailable(info));
+    updater.on('update-not-available', () => this.handleUpdateNotAvailable());
     updater.on('download-progress', (progress) => this.handleDownloadProgress(progress));
     updater.on('update-downloaded', (info) => this.handleUpdateDownloaded(info));
     updater.on('error', (error) => this.handleUpdaterError(error));
@@ -193,6 +194,23 @@ export class ApplicationUpdaterService {
       downloadPercent: null,
       errorMessage: null,
       requiresManualDownload: isManualDownloadRequired(process.platform, process.env.APPIMAGE)
+    });
+  }
+
+  /** Сбрасывает найденное обновление, если релиз отозван и проверка его больше не видит. */
+  private handleUpdateNotAvailable(): void {
+    if (this.hasDownloadInProgressOrReady() || this.state.status === 'idle') {
+      return;
+    }
+
+    this.updateState({
+      status: 'idle',
+      version: null,
+      changes: [],
+      releaseUrl: null,
+      downloadPercent: null,
+      errorMessage: null,
+      requiresManualDownload: false
     });
   }
 

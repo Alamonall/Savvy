@@ -168,3 +168,15 @@ test('сохраняет литералы вида <tag> внутри markdown-�
     { type: 'fix', text: 'preserve <video> tags' }
   ]);
 });
+
+test('сохраняет структурные теги внутри markdown-кода однострочного пункта', () => {
+  assert.deepEqual(parseReleaseChanges('- `fix: preserve <p> tags` by [[a](https://x.y)]'), [
+    { type: 'fix', text: 'preserve <p> tags' }
+  ]);
+});
+
+test('хвост «by default» без ссылки на автора остаётся описанием', () => {
+  assert.deepEqual(parseReleaseChanges('- `--cookies` by default'), [
+    { type: 'other', text: '--cookies by default' }
+  ]);
+});

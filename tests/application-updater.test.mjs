@@ -143,3 +143,12 @@ test('скачивание дожидается выполняющейся пр�
   assert.match(updaterService, /pendingCheck/);
   assert.match(updaterService, /await this\.pendingCheck/);
 });
+
+test('отзыв ранее найденного релиза сбрасывает состояние обновления', async () => {
+  const updaterService = await readFile(
+    new URL('../src/main/services/application-updater.service.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(updaterService, /updater\.on\('update-not-available'/);
+});

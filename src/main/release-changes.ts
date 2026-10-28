@@ -89,11 +89,20 @@ function toMarkdownLines(notes: ReleaseNotesInput): string[] {
         .join('\n')
     : (notes ?? '');
 
+  // Markdown-код содержит буквальный текст: структурные теги в нём не трогаем.
   return text
+    .split(/(`[^`\n]*`)/)
+    .map((part, index) => (index % 2 === 1 ? part : replaceStructuralTags(part)))
+    .join('')
+    .split(/\r?\n/);
+}
+
+/** Превращает структурные HTML-теги списков и абзацев в переводы строк и маркеры пунктов. */
+function replaceStructuralTags(html: string): string {
+  return html
     .replace(/<li\b[^>]*>(?:\s*<(?:p|div)\b[^>]*>)*\s*/gi, '\n- ')
     .replace(/<\/li>/gi, '\n')
-    .replace(/<\/?(?:p|div|ul|ol|h[1-6]|br|hr|blockquote|table|tr)\b[^>]*>/gi, '\n')
-    .split(/\r?\n/);
+    .replace(/<\/?(?:p|div|ul|ol|h[1-6]|br|hr|blockquote|table|tr)\b[^>]*>/gi, '\n');
 }
 
 /** Извлекает тип и текст из содержимого пункта; пункт без текста пропускается. */
@@ -139,7 +148,9 @@ function extractCommitText(content: string): string {
 /** Код в начале пункта — сообщение коммита, только если дальше нет ничего, кроме хвоста ` by автор in ...`. */
 function isCommitReference(rest: string): boolean {
   const cleanedRest = cleanText(rest.replace(MARKDOWN_LINK_PATTERN, '$1'));
-  return !cleanedRest || AUTHORSHIP_TAIL_PATTERN.test(cleanedRest);
+  // Хвост авторства GitHub всегда содержит ссылку или упоминание: без них это обычный текст.
+  const hasAuthorMarkup = /\]\(|<a\b|@/i.test(rest);
+  return !cleanedRest || (hasAuthorMarkup && AUTHORSHIP_TAIL_PATTERN.test(cleanedRest));
 }
 
 /** Удаляет HTML-теги, декодирует базовые сущности и схлопывает пробелы. */
