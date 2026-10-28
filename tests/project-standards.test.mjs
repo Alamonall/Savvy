@@ -209,8 +209,8 @@ test('имя ролика фиксируется при первом обнар�
 test('UI-элементы переиспользуют общий стиль', async () => {
   const agents = await readFile(new URL('../AGENTS.md', import.meta.url), 'utf8');
 
-  assert.match(agents, /Actively reuse existing components and shared render helpers/);
-  assert.match(agents, /Equivalent UI elements must use the same DOM structure/);
+  assert.match(agents, /Активно переиспользуй существующие компоненты и общие render-хелперы/);
+  assert.match(agents, /Эквивалентные элементы UI должны иметь одинаковую DOM-структуру/);
 });
 
 test('повторный клик по задаче сворачивает её лог', async () => {
