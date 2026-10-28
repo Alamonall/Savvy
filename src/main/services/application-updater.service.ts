@@ -25,7 +25,6 @@ export class ApplicationUpdaterService {
   private updater: AppUpdater | null = null;
   private sender: ApplicationUpdateSender | null = null;
   private checkTimer: NodeJS.Timeout | null = null;
-  private isExplicitDownloadRequested = false;
   private state: Omit<ApplicationUpdateState, 'activeDownloadCount' | 'queuedDownloadCount'> = {
     status: 'idle',
     currentVersion: app.getVersion(),
@@ -97,18 +96,15 @@ export class ApplicationUpdaterService {
       throw new ApplicationUpdateError('Обновление ещё не готово к скачиванию.');
     }
 
-    this.isExplicitDownloadRequested = true;
     this.updateState({ status: 'downloading', downloadPercent: 0, errorMessage: null });
 
     try {
       await this.updater.downloadUpdate();
     } catch (error) {
-      // Если updater уже сообщил об ошибке событием, статус перестал быть downloading и повтор не нужен.
+      // Отклонённый downloadUpdate() — единственный источник ошибки скачивания.
       if (this.getState().status === 'downloading') {
         this.markDownloadFailed(error);
       }
-    } finally {
-      this.isExplicitDownloadRequested = false;
     }
   }
 
@@ -136,7 +132,9 @@ export class ApplicationUpdaterService {
     updater.on('update-available', (info) => this.handleUpdateAvailable(info));
     updater.on('download-progress', (progress) => this.handleDownloadProgress(progress));
     updater.on('update-downloaded', (info) => this.handleUpdateDownloaded(info));
-    updater.on('error', (error) => this.handleUpdaterError(error));
+    // Событие error нужно только чтобы EventEmitter не бросил исключение: ошибку скачивания
+    // download() получает из отклонённого downloadUpdate(), а проверки сообщают её сами.
+    updater.on('error', () => undefined);
   }
 
   /** Выполняет проверку без пользовательской ошибки, когда GitHub временно недоступен. */
@@ -191,15 +189,6 @@ export class ApplicationUpdaterService {
       downloadPercent: 100,
       errorMessage: null
     });
-  }
-
-  /** Показывает ошибку только если пользователь сам начал скачивание обновления. */
-  private handleUpdaterError(error: Error): void {
-    if (!this.isExplicitDownloadRequested) {
-      return;
-    }
-
-    this.markDownloadFailed(error);
   }
 
   /** Переводит состояние в ошибку скачивания, сохраняя данные релиза для повторной попытки. */

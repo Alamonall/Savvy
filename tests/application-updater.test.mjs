@@ -110,3 +110,13 @@ test('релизный workflow публикует metadata обновлений
   assert.match(workflow, /APPLE_APP_SPECIFIC_PASSWORD:/);
   assert.match(workflow, /APPLE_TEAM_ID:/);
 });
+
+test('ошибка фоновой проверки не переводит идущее скачивание в состояние ошибки', async () => {
+  const updaterService = await readFile(
+    new URL('../src/main/services/application-updater.service.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(updaterService, /updater\.on\('error', \(\) =>/);
+  assert.doesNotMatch(updaterService, /isExplicitDownloadRequested/);
+});

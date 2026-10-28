@@ -49,7 +49,13 @@ export function parseReleaseChanges(notes: ReleaseNotesInput): ReleaseChange[] {
     const bulletMatch = BULLET_PATTERN.exec(line);
     const content = bulletMatch ? line.slice(bulletMatch[0].length).trim() : line;
 
-    if (POST_MERGE_HEADING_PATTERN.test(content.replace(/[*_#`]/g, '').trim())) {
+    if (
+      POST_MERGE_HEADING_PATTERN.test(
+        cleanText(content)
+          .replace(/[*_#`]/g, '')
+          .trim()
+      )
+    ) {
       isPostMergeBlock = true;
       continue;
     }
@@ -82,7 +88,7 @@ function toMarkdownLines(notes: ReleaseNotesInput): string[] {
     : (notes ?? '');
 
   return text
-    .replace(/<li\b[^>]*>/gi, '\n- ')
+    .replace(/<li\b[^>]*>(?:\s*<(?:p|div)\b[^>]*>)*\s*/gi, '\n- ')
     .replace(/<\/li>/gi, '\n')
     .replace(/<\/?(?:p|div|ul|ol|h[1-6]|br|hr|blockquote|table|tr)\b[^>]*>/gi, '\n')
     .split(/\r?\n/);
@@ -111,7 +117,7 @@ function parseChangeItem(content: string): ReleaseChange | null {
  */
 function extractCommitText(content: string): string {
   const leadingCodeMatch = LEADING_CODE_PATTERN.exec(content);
-  if (leadingCodeMatch) {
+  if (leadingCodeMatch && isCommitReference(content.slice(leadingCodeMatch[0].length))) {
     return cleanText(leadingCodeMatch[1] ?? leadingCodeMatch[2] ?? '');
   }
 
@@ -123,6 +129,12 @@ function extractCommitText(content: string): string {
   }
 
   return text.replace(MENTION_SUFFIX_PATTERN, '').trim();
+}
+
+/** Код в начале пункта — сообщение коммита, только если дальше нет ничего, кроме хвоста ` by автор in ...`. */
+function isCommitReference(rest: string): boolean {
+  const cleanedRest = cleanText(rest.replace(MARKDOWN_LINK_PATTERN, '$1'));
+  return !cleanedRest || /^by\s/i.test(cleanedRest);
 }
 
 /** Удаляет HTML-теги, декодирует базовые сущности и схлопывает пробелы. */

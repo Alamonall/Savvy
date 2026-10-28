@@ -134,3 +134,25 @@ test('дубликаты пунктов сохраняются', () => {
     { type: 'fix', text: 'одно и то же' }
   ]);
 });
+
+test('сохраняет HTML-пункты, где содержимое обёрнуто в абзац', () => {
+  const notes = '<ul><li><p><code>fix: исправление</code></p></li></ul>';
+
+  assert.deepEqual(parseReleaseChanges(notes), [{ type: 'fix', text: 'исправление' }]);
+});
+
+test('исключает блок Post-merge automation, если заголовок выделен HTML-тегами', () => {
+  const notes = [
+    '<ul><li><code>feat: настоящее изменение</code></li></ul>',
+    '<h3><strong>Post-merge automation:</strong></h3>',
+    '<ul><li><code>chore: release [skip ci]</code></li></ul>'
+  ].join('\n');
+
+  assert.deepEqual(parseReleaseChanges(notes), [{ type: 'feat', text: 'настоящее изменение' }]);
+});
+
+test('не обрезает описание, если пункт начинается с кода, но не является сообщением коммита', () => {
+  assert.deepEqual(parseReleaseChanges('- `--cookies` теперь поддерживается'), [
+    { type: 'other', text: '--cookies теперь поддерживается' }
+  ]);
+});
