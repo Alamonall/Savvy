@@ -150,6 +150,7 @@ export interface YtdlpApi {
   getYtdlpLatestRelease(channel: YtdlpReleaseChannel): Promise<string>;
   chooseYtdlpBinary(): Promise<string | null>;
   getEffectiveOptionsPreview(): Promise<string>;
+  getEffectiveConfigText(): Promise<string>;
   listFolderDirectories(currentPath: string): Promise<FolderListing>;
   suggestFolderDirectories(inputPath: string): Promise<FolderEntry[]>;
   importConfigFile(): Promise<AppSettings | null>;

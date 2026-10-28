@@ -98,6 +98,11 @@ export class SettingsService {
     return this.buildTaskConfiguration('preview', '').optionsText;
   }
 
+  /** Возвращает config, который получит следующая задача: текстовая часть и параметры UI. */
+  getEffectiveConfigText(): string {
+    return this.buildEffectiveConfigText();
+  }
+
   parseOptions(optionsText: string): string[] {
     const args: string[] = [];
     let current = '';
@@ -457,7 +462,11 @@ export class SettingsService {
     }
 
     const ffmpegDirectory = this.binaryLocatorService.getFfmpegDirectory();
-    if (ffmpegDirectory && !appSettings.ffmpegLocation.trim()) {
+    if (
+      ffmpegDirectory &&
+      !appSettings.ffmpegLocation.trim() &&
+      !this.hasConfigOption(appSettings.inlineConfigText, '--ffmpeg-location')
+    ) {
       args.push('--ffmpeg-location', ffmpegDirectory);
     }
 
@@ -653,6 +662,13 @@ export class SettingsService {
     }
 
     return uniqueArgs;
+  }
+
+  /** Проверяет, что текстовый config уже задаёт опцию, в том числе в форме `--option=value`. */
+  private hasConfigOption(configText: string, option: string): boolean {
+    return this.parseYtdlpConfigText(configText).some(
+      (arg) => arg === option || arg.startsWith(`${option}=`)
+    );
   }
 
   /** Проверяет наличие аргумента в текстовом конфиге с учётом коротких псевдонимов yt-dlp. */

@@ -876,6 +876,11 @@ label.settings-option {
   gap: 8px;
 }
 
+.settings-browser-cookies {
+  display: grid;
+  gap: 8px;
+}
+
 .config-textarea {
   min-height: 460px;
 }
