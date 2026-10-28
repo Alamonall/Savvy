@@ -24,12 +24,10 @@ const POST_MERGE_HEADING_PATTERN = /^post-merge automation\b/i;
 const CONVENTIONAL_PREFIX_PATTERN = /^([a-z]+)(?:\([^)]*\))?!?:(.*)$/i;
 /** Markdown- и HTML-ссылка, которая в GitHub-формате указывает на автора или коммит. */
 const MARKDOWN_LINK_PATTERN = /\[+([^\]]*)\]\([^)]*\)\]*/g;
-/** Хвост ` by автор in коммит`, который GitHub добавляет после текста коммита. */
-const BY_IN_SUFFIX_PATTERN = /\s+by\s+\S+(?:\s+in\s+\S+)?\s*$/i;
+/** Начало хвоста авторства: ` by` и сразу за ним ссылка, тег `<a>` или `@`-упоминание. */
+const AUTHORSHIP_START_PATTERN = /\s+by\s+(?=\[|<a\b|@)/gi;
 /** Полный хвост авторства после кода: `by автор` или `by автор in коммит`. */
 const AUTHORSHIP_TAIL_PATTERN = /^by\s+\S+(?:\s+in\s+\S+)?$/i;
-/** Хвост ` by @автор in ...` без ссылки, если упоминание пришло как обычный текст. */
-const MENTION_SUFFIX_PATTERN = /\s+by\s+@[\w-]+(?:\s+in\s+\S+)?\s*$/i;
 
 /** Вход для разбора: строка release notes или список заметок из electron-updater. */
 export type ReleaseNotesInput = string | Array<{ note: string | null }> | null | undefined;
@@ -135,14 +133,20 @@ function extractCommitText(content: string): string {
       : cleanText(leadingCodeMatch[2] ?? '');
   }
 
-  const hasLinks = /\]\([^)]*\)|<a\b/i.test(content);
-  let text = cleanText(content.replace(MARKDOWN_LINK_PATTERN, '$1').replace(/`/g, ''));
+  const withoutAuthorship = stripAuthorshipTail(content);
+  return cleanText(withoutAuthorship.replace(MARKDOWN_LINK_PATTERN, '$1').replace(/`/g, ''));
+}
 
-  if (hasLinks) {
-    text = text.replace(BY_IN_SUFFIX_PATTERN, '');
+/** Срезает хвост `by автор [in коммит]`, только если автор оформлен ссылкой или упоминанием. */
+function stripAuthorshipTail(content: string): string {
+  const matches = [...content.matchAll(AUTHORSHIP_START_PATTERN)];
+  const lastMatch = matches.at(-1);
+  if (lastMatch?.index === undefined) {
+    return content;
   }
 
-  return text.replace(MENTION_SUFFIX_PATTERN, '').trim();
+  const tail = cleanText(content.slice(lastMatch.index).replace(MARKDOWN_LINK_PATTERN, '$1'));
+  return AUTHORSHIP_TAIL_PATTERN.test(tail) ? content.slice(0, lastMatch.index) : content;
 }
 
 /** Код в начале пункта — сообщение коммита, только если дальше нет ничего, кроме хвоста ` by автор in ...`. */

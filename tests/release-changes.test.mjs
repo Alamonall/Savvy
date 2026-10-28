@@ -180,3 +180,19 @@ test('хвост «by default» без ссылки на автора остаё
     { type: 'other', text: '--cookies by default' }
   ]);
 });
+
+test('ссылка в описании не делает «by default» авторским хвостом', () => {
+  assert.deepEqual(
+    parseReleaseChanges(
+      '- fix: enable [captions](https://github.com/Alamonall/Savvy/pull/12) by default'
+    ),
+    [{ type: 'fix', text: 'enable captions by default' }]
+  );
+});
+
+test('срезает авторский хвост со ссылкой в пункте без начального кода', () => {
+  assert.deepEqual(
+    parseReleaseChanges('- feat: add retry by [[Alamonall](https://github.com/Alamonall)]'),
+    [{ type: 'feat', text: 'add retry' }]
+  );
+});
