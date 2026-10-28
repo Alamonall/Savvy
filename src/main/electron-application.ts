@@ -164,6 +164,7 @@ export class ElectronApplication {
     ipcMain.handle('downloads:list', () => downloads.list());
     ipcMain.handle('downloads:clear-history', () => downloads.clearHistory());
     ipcMain.handle('application-update:get', () => applicationUpdater.getState());
+    ipcMain.handle('application-update:check', () => applicationUpdater.check());
     ipcMain.handle('application-update:download', () => applicationUpdater.download());
     ipcMain.handle(
       'application-update:install',

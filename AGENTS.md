@@ -40,29 +40,29 @@ docs: update development rules
 
 ## Pull Request
 
-Заголовок и описание каждого PR должны быть написаны только на английском языке и соответствовать формату Conventional Commits:
+Заголовок и описание каждого PR пишутся на русском языке. Заголовок соответствует формату Conventional Commits: тип и `scope` остаются на английском, описание после двоеточия — на русском:
 
 ```text
-type(scope): description
+type(scope): описание
 ```
 
 В PR запрещены заголовки без допустимого типа, например `Update`, `Changes`, `WIP` или произвольное описание.
 
 PR обязан содержать:
 
-- a short description of the change;
-- the reason for the change;
-- a list of completed checks;
-- a description of breaking changes, if any.
+- краткое описание изменения;
+- причину изменения;
+- список выполненных проверок;
+- описание breaking changes, если они есть.
 
 Перед открытием PR необходимо проверить заголовок и все коммиты в ветке. Если коммиты не соответствуют Conventional Commits, их нужно исправить интерактивным rebase до создания PR.
 
-## UI Consistency and Reuse
+## Единообразие и повторное использование UI
 
-- Before adding new UI markup or styles, inspect existing components, render helpers, CSS classes, design tokens, and interaction handlers that provide the same behavior.
-- Actively reuse existing components and shared render helpers for actions, statuses, progress indicators, tooltips, inputs, cards, and empty states. Do not create parallel implementations for visually or functionally equivalent elements.
-- Equivalent UI elements must use the same DOM structure, class names, spacing, typography, colors, states, and interaction behavior across ordinary items, grouped items, dialogs, and settings.
-- Represent legitimate visual or behavioral variants with shared components plus explicit modifier classes or data attributes. Avoid duplicating a component solely because it appears in another container.
-- Keep shared styles in the common component selector or design token. Add a specialized selector only when the difference is intentional and documented by the component structure.
-- When introducing a new component instead of reusing an existing one, explain the boundary in the code review and add focused tests for its states and interactions.
-- Every UI change must be checked in both light and dark themes, including hover, focus, disabled, success, and error states where applicable.
+- Перед добавлением новой UI-разметки или стилей изучи существующие компоненты, render-хелперы, CSS-классы, дизайн-токены и обработчики взаимодействия, которые дают то же поведение.
+- Активно переиспользуй существующие компоненты и общие render-хелперы для действий, статусов, индикаторов прогресса, tooltip, полей ввода, карточек и пустых состояний. Не создавай параллельные реализации визуально или функционально эквивалентных элементов.
+- Эквивалентные элементы UI должны иметь одинаковую DOM-структуру, имена классов, отступы, типографику, цвета, состояния и поведение в обычных элементах, сгруппированных элементах, диалогах и настройках.
+- Допустимые визуальные и поведенческие варианты выражай общими компонентами с явными модификаторами классов или data-атрибутами. Не дублируй компонент только потому, что он находится в другом контейнере.
+- Держи общие стили в селекторе общего компонента или дизайн-токене. Специализированный селектор добавляй только при намеренном отличии, которое отражено в структуре компонента.
+- Если вместо переиспользования вводится новый компонент, объясни его границы в code review и добавь тесты на его состояния и взаимодействия.
+- Каждое изменение UI проверяй в светлой и тёмной темах, включая состояния hover, focus, disabled, success и error, где они применимы.

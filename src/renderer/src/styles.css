@@ -74,12 +74,101 @@ button {
   gap: 10px;
 }
 
+/* Иконка темы и иконка обновления делят размер и выравнивание. */
+.topbar-actions .theme-toggle,
+.topbar-actions .application-update-button {
+  display: inline-grid;
+  width: 38px;
+  padding: 0;
+  place-items: center;
+  font-size: 16px;
+}
+
 .application-update {
   position: relative;
 }
 
 .application-update-button {
-  min-width: 158px;
+  position: relative;
+}
+
+.application-update-button:focus-visible {
+  outline: 2px solid #2f80ed;
+  outline-offset: 2px;
+}
+
+.application-update .application-update-button[data-update-stage='available'],
+.application-update .application-update-button[data-update-stage='downloading'] {
+  color: #2f80ed;
+}
+
+.application-update .application-update-button[data-update-stage='downloaded'] {
+  color: #1f7a4d;
+}
+
+.application-update .application-update-button[data-update-stage='error'] {
+  color: #b42318;
+}
+
+.application-update .application-update-button:disabled {
+  background: transparent;
+  cursor: default;
+}
+
+.application-update-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.application-update-progress {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  pointer-events: none;
+}
+
+.application-update-progress-track,
+.application-update-progress-value {
+  fill: none;
+  stroke-width: 2;
+}
+
+.application-update-progress-track {
+  stroke: #d0d7de;
+}
+
+.application-update-progress-value {
+  stroke: currentColor;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+/* Знак этапа: цвет берётся из currentColor кнопки, поэтому меняется вместе с этапом. */
+.application-update-indicator {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: currentColor;
+  place-items: center;
+}
+
+.application-update
+  .application-update-button[data-update-stage='available']
+  .application-update-indicator {
+  width: 10px;
+  height: 10px;
+}
+
+.application-update-indicator svg {
+  width: 8px;
+  height: 8px;
+  color: #ffffff;
 }
 
 .application-update-tooltip {
@@ -91,7 +180,6 @@ button {
   width: min(360px, calc(100vw - 48px));
   max-height: min(420px, calc(100vh - 120px));
   overflow: auto;
-  white-space: pre-wrap;
   border: 1px solid #d0d7de;
   border-radius: 8px;
   background: #ffffff;
@@ -107,18 +195,89 @@ button {
   display: block;
 }
 
-.application-update-error {
-  position: absolute;
-  right: 0;
-  width: 280px;
-  margin-top: 6px;
-  color: #b42318;
-  font-size: 12px;
+.application-update-tooltip strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #101828;
 }
 
-.application-update-release {
-  display: block;
+.application-update-tooltip p {
   margin-top: 8px;
+  color: #667085;
+}
+
+/* Список пунктов релиза используется и в подсказке, и в настройках. */
+.release-changes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.release-changes li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.release-changes li > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.release-change-type {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: #edf2f7;
+  color: #475467;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.application-update-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.application-update-details {
+  margin-top: 14px;
+  padding-top: 4px;
+}
+
+.application-update-details > summary {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  cursor: pointer;
+  color: #344054;
+  font-weight: 600;
+  list-style: none;
+}
+
+.application-update-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.application-update-details > summary::after {
+  content: '⌄';
+  margin-left: auto;
+  color: #667085;
+  font-size: 16px;
+}
+
+.application-update-details[open] > summary::after {
+  content: '⌃';
+}
+
+.application-update-details .release-changes {
+  margin-top: 10px;
 }
 
 h1,
@@ -1822,14 +1981,60 @@ label.settings-option {
   color: #e5e7eb;
 }
 
+[data-theme='dark'] .application-update-button[data-update-stage='available'],
+[data-theme='dark'] .application-update-button[data-update-stage='downloading'] {
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .application-update-button[data-update-stage='downloaded'] {
+  color: #4ade80;
+}
+
+[data-theme='dark'] .application-update-button[data-update-stage='error'] {
+  color: #fca5a5;
+}
+
+[data-theme='dark'] .application-update-button:disabled {
+  background: transparent;
+}
+
+[data-theme='dark'] .application-update-button:focus-visible {
+  outline-color: #60a5fa;
+}
+
+[data-theme='dark'] .application-update-indicator {
+  border-color: #111827;
+}
+
+[data-theme='dark'] .application-update-progress-track {
+  stroke: #374151;
+}
+
 [data-theme='dark'] .application-update-tooltip {
   border-color: #4b5563;
   background: #1f2937;
   color: #e5e7eb;
 }
 
-[data-theme='dark'] .application-update-error {
-  color: #fecaca;
+[data-theme='dark'] .application-update-tooltip strong {
+  color: #ffffff;
+}
+
+[data-theme='dark'] .application-update-tooltip p {
+  color: #9ca3af;
+}
+
+[data-theme='dark'] .release-change-type {
+  background: #374151;
+  color: #d1d5db;
+}
+
+[data-theme='dark'] .application-update-details > summary {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .application-update-details > summary::after {
+  color: #9ca3af;
 }
 
 [data-theme='dark'] .settings-group > summary::after {
