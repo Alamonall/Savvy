@@ -188,6 +188,7 @@ export class ElectronApplication {
     ipcMain.handle('settings:get-effective-options-preview', () =>
       settings.getEffectiveOptionsPreview()
     );
+    ipcMain.handle('settings:get-effective-config-text', () => settings.getEffectiveConfigText());
     ipcMain.handle('settings:update', (_, nextSettings: AppSettings) => {
       const updatedSettings = settings.update(nextSettings);
       downloads.startNext();

@@ -9,6 +9,12 @@ import type {
   YtdlpBinaryInfo,
   YtdlpReleaseChannel
 } from '../../shared/types';
+import {
+  COOKIES_BROWSERS,
+  formatBrowserCookies,
+  parseBrowserCookies,
+  type BrowserCookiesSpec
+} from '../../shared/browser-cookies';
 import './styles.css';
 
 type Tab = 'queue' | 'settings';
@@ -38,6 +44,13 @@ type SettingsOption =
       description: string;
       original: string;
       options: Array<{ label: string; value: string }>;
+    }
+  | {
+      key: keyof AppSettings;
+      kind: 'browser-cookies';
+      label: string;
+      description: string;
+      original: string;
     }
   | {
       id: string;
@@ -105,6 +118,7 @@ let isYtdlpUpdateInProgress = false;
 let isYtdlpLatestReleaseCheckInProgress = false;
 let ytdlpLatestReleaseVersion: string | null = null;
 let effectiveOptionsPreview = '';
+let effectiveConfigText = '';
 let textConfigDraft: string | null = null;
 let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
 let collapsedDays = readCollapsedDays();
@@ -720,21 +734,11 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
       },
       {
         key: 'cookiesFromBrowser',
-        kind: 'select',
+        kind: 'browser-cookies',
         label: 'Cookies из браузера',
-        description: 'Загрузить cookies из профиля браузера.',
-        original: '--cookies-from-browser BROWSER',
-        options: [
-          { label: 'Не выбрано', value: '' },
-          { label: 'Chrome', value: 'chrome' },
-          { label: 'Chromium', value: 'chromium' },
-          { label: 'Firefox', value: 'firefox' },
-          { label: 'Safari', value: 'safari' },
-          { label: 'Edge', value: 'edge' },
-          { label: 'Brave', value: 'brave' },
-          { label: 'Opera', value: 'opera' },
-          { label: 'Vivaldi', value: 'vivaldi' }
-        ]
+        description:
+          'Браузер, профиль и контейнер. LibreWolf, Zen, Waterfox и другие Firefox-based браузеры — это Firefox с папкой их профиля.',
+        original: '--cookies-from-browser BROWSER[+KEYRING][:PROFILE][::CONTAINER]'
       },
       {
         key: 'cookiesFile',
@@ -995,6 +999,9 @@ function installBrowserPreviewApi(): void {
       throw new Error('Выбор бинарника доступен только в Electron.');
     },
     async getEffectiveOptionsPreview() {
+      return buildEffectiveOptionsPreview(previewSettings);
+    },
+    async getEffectiveConfigText() {
       return buildEffectiveOptionsPreview(previewSettings);
     },
     async listFolderDirectories(currentPath) {
@@ -1361,11 +1368,11 @@ function saveConfigVersion(text: string): ConfigVersion[] {
 }
 
 function getCurrentConfigText(): string {
-  return (textConfigDraft ?? (settings.inlineConfigText || effectiveOptionsPreview)).trim();
+  return (textConfigDraft ?? effectiveConfigText).trim();
 }
 
 function getSavedConfigText(): string {
-  return (settings.inlineConfigText || effectiveOptionsPreview).trim();
+  return effectiveConfigText.trim();
 }
 
 function buildConfigDiff(previousText: string, nextText: string): string {
@@ -1519,6 +1526,9 @@ function isSettingsOptionMatching(option: SettingsOption, query: string): boolea
       : []),
     ...(option.kind === 'exclusive'
       ? option.choices.map((item) => `${item.label} ${item.value}`)
+      : []),
+    ...(option.kind === 'browser-cookies'
+      ? COOKIES_BROWSERS.map((item) => `${item.label} ${item.value}`)
       : [])
   ]
     .join(' ')
@@ -1584,7 +1594,51 @@ function renderCookiesSourceWarning(
   return '';
 }
 
+function renderBrowserCookiesOption(
+  option: Extract<SettingsOption, { kind: 'browser-cookies' }>
+): string {
+  const spec = parseBrowserCookies(settings.cookiesFromBrowser);
+  const isKnownBrowser = COOKIES_BROWSERS.some((browser) => browser.value === spec.browser);
+  const browserOptions = [
+    { label: 'Не выбрано', value: '' },
+    ...COOKIES_BROWSERS,
+    ...(spec.browser && !isKnownBrowser ? [{ label: spec.browser, value: spec.browser }] : [])
+  ];
+
+  return `
+    <div class="settings-option">
+      <div class="settings-option-copy">
+        <label class="settings-option-title" for="setting-${String(option.key)}">${escapeHtml(option.label)} ${renderOriginalTextButton(option)}</label>
+        <span class="settings-option-description">${escapeHtml(option.description)}</span>
+        ${renderRawOptionLabel(option)}
+      </div>
+      <div class="settings-browser-cookies">
+        <select id="setting-${String(option.key)}" data-cookies-browser-part="browser">
+          ${renderSelectOptions(browserOptions, spec.browser)}
+        </select>
+        ${
+          spec.browser
+            ? `<div class="settings-path-row">
+                <input data-cookies-browser-part="profile" type="text" value="${escapeHtml(spec.profile)}" placeholder="Профиль по умолчанию или путь к папке профиля" />
+                <button class="ghost bordered" data-choose-setting-path="${String(option.key)}" type="button">Выбрать</button>
+              </div>`
+            : ''
+        }
+        ${
+          spec.browser === 'firefox'
+            ? `<input data-cookies-browser-part="container" type="text" value="${escapeHtml(spec.container)}" placeholder="Контейнер Firefox (none — без контейнера)" />`
+            : ''
+        }
+      </div>
+    </div>
+  `;
+}
+
 function renderSettingsOption(option: SettingsOption): string {
+  if (option.kind === 'browser-cookies') {
+    return renderBrowserCookiesOption(option);
+  }
+
   if (option.kind === 'exclusive') {
     return `
       <div class="settings-option">
@@ -1839,7 +1893,10 @@ async function updateLocalSettings(partialSettings: Partial<AppSettings>): Promi
   };
 
   settings = await window.ytdlp.updateSettings(nextSettings);
-  effectiveOptionsPreview = await window.ytdlp.getEffectiveOptionsPreview();
+  [effectiveOptionsPreview, effectiveConfigText] = await Promise.all([
+    window.ytdlp.getEffectiveOptionsPreview(),
+    window.ytdlp.getEffectiveConfigText()
+  ]);
   refreshSettingsPanelView();
 }
 
@@ -1852,6 +1909,10 @@ function refreshSettingsPanelView(): void {
 
   if (optionsPreview) {
     optionsPreview.textContent = effectiveOptionsPreview || 'Без дополнительных аргументов';
+  }
+
+  if (settingsMode === 'text' && textConfigDraft === null) {
+    render();
   }
 }
 
@@ -2312,6 +2373,14 @@ function readTheme(): Theme {
   return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
 }
 
+function deriveCookiesSource(appSettings: AppSettings): CookiesSource {
+  if (appSettings.cookiesFromBrowser) {
+    return 'browser';
+  }
+
+  return appSettings.cookiesFile ? 'file' : 'none';
+}
+
 function readCookiesSource(): CookiesSource {
   const savedSource = localStorage.getItem(COOKIES_SOURCE_KEY);
   return savedSource === 'browser' || savedSource === 'file' ? savedSource : 'none';
@@ -2567,6 +2636,17 @@ function bindSettingsEvents(): void {
         const updatePromise = updateLocalSettings({ [key]: value } as Partial<AppSettings>);
         if (key === 'cookiesFromBrowser' || key === 'cookiesFile') {
           void updatePromise.then(() => render());
+        }
+      });
+    });
+
+  document
+    .querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-cookies-browser-part]')
+    .forEach((control) => {
+      control.addEventListener('change', () => {
+        const part = control.dataset.cookiesBrowserPart as keyof BrowserCookiesSpec | undefined;
+        if (part) {
+          void updateBrowserCookies(part, control.value);
         }
       });
     });
@@ -3108,6 +3188,51 @@ async function installApplicationUpdate(): Promise<void> {
   }
 }
 
+/**
+ * Применяет изменение одной части `--cookies-from-browser`.
+ *
+ * Смена браузера сбрасывает профиль и контейнер: путь профиля одного браузера
+ * не подходит другому.
+ */
+async function updateBrowserCookies(part: keyof BrowserCookiesSpec, value: string): Promise<void> {
+  const spec = parseBrowserCookies(settings.cookiesFromBrowser);
+  const nextSpec: BrowserCookiesSpec =
+    part === 'browser'
+      ? { browser: value, keyring: '', profile: '', container: '' }
+      : { ...spec, [part]: value };
+
+  await updateLocalSettings({ cookiesFromBrowser: formatBrowserCookies(nextSpec) });
+  render();
+}
+
+/** Папка, с которой открывается выбор: профиль браузера, если это путь, иначе домашняя папка. */
+function getFolderPickerStartPath(targetKey: keyof AppSettings): string {
+  if (targetKey === 'cookiesFromBrowser') {
+    const { profile } = parseBrowserCookies(settings.cookiesFromBrowser);
+    return /[\\/]|^~/.test(profile) ? profile : '~';
+  }
+
+  const currentValue = settings[targetKey];
+  return typeof currentValue === 'string' ? currentValue : settings.downloadDir;
+}
+
+/** Превращает выбранную папку в изменение настроек; для cookies папка становится профилем браузера. */
+function buildFolderSelectionPatch(
+  targetKey: keyof AppSettings,
+  selectedPath: string
+): Partial<AppSettings> {
+  if (targetKey === 'cookiesFromBrowser') {
+    return {
+      cookiesFromBrowser: formatBrowserCookies({
+        ...parseBrowserCookies(settings.cookiesFromBrowser),
+        profile: selectedPath
+      })
+    };
+  }
+
+  return { [targetKey]: selectedPath } as Partial<AppSettings>;
+}
+
 async function chooseSettingPath(key: keyof AppSettings): Promise<void> {
   await openFolderPicker(key);
 }
@@ -3126,9 +3251,7 @@ async function openFolderPicker(targetKey: keyof AppSettings): Promise<void> {
   render();
 
   try {
-    picker.listing = await window.ytdlp.listFolderDirectories(
-      typeof settings[targetKey] === 'string' ? String(settings[targetKey]) : settings.downloadDir
-    );
+    picker.listing = await window.ytdlp.listFolderDirectories(getFolderPickerStartPath(targetKey));
     picker.selectedIndex = 0;
     picker.pathDraft = picker.listing.displayPath;
   } catch (error) {
@@ -3162,7 +3285,7 @@ async function addFolderPickerSelection(): Promise<void> {
   }
 
   folderPicker = null;
-  await updateLocalSettings({ [targetKey]: selectedPath } as Partial<AppSettings>);
+  await updateLocalSettings(buildFolderSelectionPatch(targetKey, selectedPath));
   render();
 }
 
@@ -3469,6 +3592,8 @@ async function saveTextConfig(): Promise<void> {
 
   saveConfigVersion(text);
   await updateLocalSettings(buildTextModeSettings(text));
+  cookiesSource = deriveCookiesSource(settings);
+  localStorage.setItem(COOKIES_SOURCE_KEY, cookiesSource);
   textConfigDraft = null;
   settingsMessage = 'Текстовый config сохранен новой версией.';
   render();
@@ -3632,13 +3757,12 @@ async function initializeApp(): Promise<void> {
       ...mainSettings
     };
     if (!localStorage.getItem(COOKIES_SOURCE_KEY)) {
-      cookiesSource = settings.cookiesFromBrowser
-        ? 'browser'
-        : settings.cookiesFile
-          ? 'file'
-          : 'none';
+      cookiesSource = deriveCookiesSource(settings);
     }
-    effectiveOptionsPreview = await window.ytdlp.getEffectiveOptionsPreview();
+    [effectiveOptionsPreview, effectiveConfigText] = await Promise.all([
+      window.ytdlp.getEffectiveOptionsPreview(),
+      window.ytdlp.getEffectiveConfigText()
+    ]);
     await refreshYtdlpBinaryInfo();
     queue = await window.ytdlp.getQueue();
     applicationUpdate = await window.ytdlp.getApplicationUpdate();

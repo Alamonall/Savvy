@@ -55,6 +55,9 @@ const api: YtdlpApi = {
   getEffectiveOptionsPreview() {
     return ipcRenderer.invoke('settings:get-effective-options-preview');
   },
+  getEffectiveConfigText() {
+    return ipcRenderer.invoke('settings:get-effective-config-text');
+  },
   listFolderDirectories(currentPath: string) {
     return ipcRenderer.invoke('settings:list-folder-directories', currentPath);
   },
