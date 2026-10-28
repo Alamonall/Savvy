@@ -106,6 +106,12 @@ export interface DownloadUpdate {
   queue: DownloadTask[];
 }
 
+/** Тип пункта списка изменений: Conventional Commits type или `other`. */
+export interface ReleaseChange {
+  type: string;
+  text: string;
+}
+
 export type ApplicationUpdateStatus = 'idle' | 'available' | 'downloading' | 'downloaded' | 'error';
 
 /** Состояние обновления Savvy, безопасное для передачи в renderer-процесс. */
@@ -113,7 +119,7 @@ export interface ApplicationUpdateState {
   status: ApplicationUpdateStatus;
   currentVersion: string;
   version: string | null;
-  releaseNotes: string | null;
+  changes: ReleaseChange[];
   releaseUrl: string | null;
   downloadPercent: number | null;
   errorMessage: string | null;
@@ -159,6 +165,7 @@ export interface YtdlpApi {
   openUrl(url: string): Promise<void>;
   openFolder(path: string): Promise<void>;
   getApplicationUpdate(): Promise<ApplicationUpdateState>;
+  checkApplicationUpdate(): Promise<void>;
   downloadApplicationUpdate(): Promise<void>;
   installApplicationUpdate(
     confirmedActiveDownloadCount: number,

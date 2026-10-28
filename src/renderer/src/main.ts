@@ -5,6 +5,7 @@ import type {
   DownloadTask,
   FolderEntry,
   FolderListing,
+  ReleaseChange,
   YtdlpBinaryCandidate,
   YtdlpBinaryInfo,
   YtdlpReleaseChannel
@@ -129,6 +130,9 @@ let theme: Theme = readTheme();
 let cookiesSource: CookiesSource = readCookiesSource();
 let settingsSearchQuery = '';
 let applicationUpdate: ApplicationUpdateState | null = null;
+let isApplicationUpdateCheckInProgress = false;
+let applicationUpdateCheckError: string | null = null;
+let isApplicationUpdateChangesOpen = false;
 let settings: AppSettings = {
   ytdlpPath: '',
   ytdlpReleaseChannel: 'stable',
@@ -1043,7 +1047,7 @@ function installBrowserPreviewApi(): void {
         status: 'idle' as const,
         currentVersion: 'preview',
         version: null,
-        releaseNotes: null,
+        changes: [],
         releaseUrl: null,
         downloadPercent: null,
         errorMessage: null,
@@ -1051,6 +1055,9 @@ function installBrowserPreviewApi(): void {
         activeDownloadCount: 0,
         queuedDownloadCount: 0
       };
+    },
+    async checkApplicationUpdate() {
+      throw new Error('Проверка обновлений доступна только в Electron.');
     },
     async downloadApplicationUpdate() {
       throw new Error('Обновление приложения доступно только в Electron.');
@@ -1775,6 +1782,7 @@ function renderSettingsUiPanel(): string {
         </div>
         ${renderYtdlpCandidates()}
       </section>
+      ${renderApplicationUpdateSettingsSection()}
       <button class="danger" id="clear-history" type="button">Очистить историю</button>
     </section>
   `;
@@ -1799,6 +1807,78 @@ function renderYtdlpCandidates(): string {
         )
         .join('')}
     </ul>
+  `;
+}
+
+/** Секция настроек: версия, действие текущего этапа, ручная проверка и список изменений. */
+function renderApplicationUpdateSettingsSection(): string {
+  const update = applicationUpdate;
+  const hasUpdate = update !== null && update.status !== 'idle';
+  const isChecking = isApplicationUpdateCheckInProgress;
+
+  return `
+    <section class="panel settings-panel settings-list-panel">
+      <div class="section-head">
+        <h2>Обновление приложения</h2>
+      </div>
+      <div class="inherited-box">
+        <p>Версия приложения: ${escapeHtml(update?.currentVersion ?? 'не определена')}</p>
+        ${update && hasUpdate && update.version ? `<p>Новая версия: ${escapeHtml(update.version)}</p>` : ''}
+        ${update?.status === 'downloading' ? renderApplicationUpdateProgress(update.downloadPercent) : ''}
+        ${update?.status === 'error' && update.errorMessage ? `<p class="settings-warning">${escapeHtml(update.errorMessage)}</p>` : ''}
+        ${applicationUpdateCheckError ? `<p class="settings-warning">${escapeHtml(applicationUpdateCheckError)}</p>` : ''}
+      </div>
+      <div class="modal-actions">
+        ${update && hasUpdate ? renderApplicationUpdatePrimaryAction(update) : ''}
+        ${update?.releaseUrl && !update.requiresManualDownload ? '<button class="ghost bordered" id="open-application-release" type="button">Открыть на GitHub</button>' : ''}
+        <button class="ghost bordered" id="check-application-update" type="button" ${isChecking ? 'disabled' : ''}>${isChecking ? 'Проверка…' : 'Проверить сейчас'}</button>
+      </div>
+      ${update && hasUpdate ? renderApplicationUpdateChanges(update) : ''}
+    </section>
+  `;
+}
+
+/** Основная кнопка секции выполняет то же действие, что и клик по иконке в topbar. */
+function renderApplicationUpdatePrimaryAction(update: ApplicationUpdateState): string {
+  if (update.status === 'downloading') {
+    return '<button class="primary" type="button" disabled>Скачивание…</button>';
+  }
+
+  if (update.status === 'downloaded') {
+    return '<button class="primary" data-application-update-action type="button">Установить и перезапустить</button>';
+  }
+
+  return `<button class="primary" data-application-update-action type="button">${getApplicationUpdatePrimaryLabel(update)}</button>`;
+}
+
+function getApplicationUpdatePrimaryLabel(update: ApplicationUpdateState): string {
+  if (update.requiresManualDownload && update.releaseUrl) {
+    return 'Открыть релиз';
+  }
+
+  return update.status === 'error' ? 'Повторить' : 'Скачать';
+}
+
+function renderApplicationUpdateProgress(downloadPercent: number | null): string {
+  const percent = getApplicationUpdatePercent(downloadPercent);
+
+  return `
+    <div class="application-update-progress-row">
+      <span class="progress-track" aria-label="Прогресс">
+        <span class="progress-fill" style="width: ${percent}%"></span>
+      </span>
+      <span class="progress-value">${percent}%</span>
+    </div>
+  `;
+}
+
+/** Сворачиваемый полный список изменений; состояние открытия сохраняется между перерисовками. */
+function renderApplicationUpdateChanges(update: ApplicationUpdateState): string {
+  return `
+    <details class="application-update-details" id="application-update-changes" ${isApplicationUpdateChangesOpen ? 'open' : ''}>
+      <summary>Список изменений</summary>
+      ${update.changes.length ? renderReleaseChangeList(update.changes) : '<p class="hint">Список изменений недоступен</p>'}
+    </details>
   `;
 }
 
@@ -2398,43 +2478,115 @@ function toggleTheme(): void {
   render();
 }
 
-/** Рендерит доступное действие обновления, не показывая его до нахождения версии. */
+/**
+ * Рендерит иконку обновления в topbar: этап передаётся цветом, знаком и кольцом прогресса,
+ * а текст доступен только через aria-label и подсказку.
+ */
 function renderApplicationUpdateButton(): string {
   if (!applicationUpdate || applicationUpdate.status === 'idle') {
     return '';
   }
 
-  const isDownloading = applicationUpdate.status === 'downloading';
-  const isDownloaded = applicationUpdate.status === 'downloaded';
-  const label = applicationUpdate.requiresManualDownload
-    ? 'Открыть релиз'
-    : isDownloaded
-      ? 'Установить обновление'
-      : isDownloading
-        ? `Скачивание ${applicationUpdate.downloadPercent ?? 0}%`
-        : applicationUpdate.errorMessage
-          ? 'Повторить скачивание'
-          : 'Скачать обновление';
-  const details = [
-    applicationUpdate.version
-      ? `${applicationUpdate.currentVersion} → ${applicationUpdate.version}`
-      : null,
-    applicationUpdate.releaseNotes,
-    applicationUpdate.releaseUrl ? 'Полный список изменений доступен на GitHub.' : null
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  const update = applicationUpdate;
+  const isDownloading = update.status === 'downloading';
+  const versionLine = update.version
+    ? `${update.currentVersion} → ${update.version}`
+    : update.currentVersion;
+  const shownChanges = update.changes.slice(0, 5);
+  const hiddenChangesCount = update.changes.length - shownChanges.length;
 
   return `
     <div class="application-update">
-      <button class="ghost bordered application-update-button" data-application-update type="button" ${isDownloading ? 'disabled' : ''} aria-describedby="application-update-tooltip">${escapeHtml(label)}</button>
-      <span class="application-update-tooltip" id="application-update-tooltip" role="tooltip">
-        ${escapeHtml(details)}
-        ${applicationUpdate.releaseUrl ? `<button class="text-link application-update-release" data-open-application-release type="button">Открыть GitHub Release</button>` : ''}
-      </span>
-      ${applicationUpdate.errorMessage ? `<p class="application-update-error">${escapeHtml(applicationUpdate.errorMessage)}</p>` : ''}
+      <button class="ghost bordered theme-toggle application-update-button" data-application-update data-update-stage="${update.status}" type="button" aria-label="${escapeHtml(getApplicationUpdateActionLabel(update))}" aria-describedby="application-update-tooltip" ${isDownloading ? 'disabled' : ''}>
+        ${isDownloading ? renderApplicationUpdateRing(getApplicationUpdatePercent(update.downloadPercent)) : ''}
+        ${renderApplicationUpdateIcon(update.requiresManualDownload)}
+        ${renderApplicationUpdateIndicator(update.status)}
+      </button>
+      <div class="application-update-tooltip" id="application-update-tooltip" role="tooltip">
+        <strong>${escapeHtml(versionLine)}</strong>
+        ${shownChanges.length ? renderReleaseChangeList(shownChanges) : '<p>Список изменений недоступен</p>'}
+        ${hiddenChangesCount > 0 ? `<p>и ещё ${hiddenChangesCount}</p>` : ''}
+      </div>
     </div>
   `;
+}
+
+/** Подпись иконки: название этапа и действие, которое выполнит клик. */
+function getApplicationUpdateActionLabel(update: ApplicationUpdateState): string {
+  if (update.requiresManualDownload && update.releaseUrl) {
+    return 'Открыть релиз';
+  }
+
+  if (update.status === 'downloading') {
+    return `Скачивание обновления ${getApplicationUpdatePercent(update.downloadPercent)}%`;
+  }
+
+  if (update.status === 'downloaded') {
+    return withUpdateVersion('Установить обновление', update.version);
+  }
+
+  if (update.status === 'error') {
+    return 'Повторить скачивание';
+  }
+
+  return withUpdateVersion('Скачать обновление', update.version);
+}
+
+function withUpdateVersion(title: string, version: string | null): string {
+  return version ? `${title} ${version}` : title;
+}
+
+/** Процент скачивания для кольца и подписи; значения вне диапазона приводятся к 0–100. */
+function getApplicationUpdatePercent(percent: number | null): number {
+  return Math.min(100, Math.max(0, Math.round(percent ?? 0)));
+}
+
+/** Стрелка вниз для скачивания или стрелка наружу, когда обновление открывается на странице релиза. */
+function renderApplicationUpdateIcon(isManualDownload: boolean): string {
+  const iconPath = isManualDownload
+    ? '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />'
+    : '<path d="M12 4v11M7 10l5 5 5-5M5 20h14" />';
+
+  return `<svg class="application-update-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${iconPath}</svg>`;
+}
+
+/** Кольцо прогресса вокруг иконки: видимая длина дуги задаётся через stroke-dashoffset. */
+function renderApplicationUpdateRing(percent: number): string {
+  return `
+    <svg class="application-update-progress" viewBox="0 0 36 36" aria-hidden="true" focusable="false">
+      <circle class="application-update-progress-track" cx="18" cy="18" r="17" pathLength="100" />
+      <circle class="application-update-progress-value" cx="18" cy="18" r="17" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${100 - percent}" transform="rotate(-90 18 18)" />
+    </svg>
+  `;
+}
+
+const APPLICATION_UPDATE_INDICATOR_MARKS: Partial<
+  Record<ApplicationUpdateState['status'], string>
+> = {
+  downloaded: '<path d="M7.5 12.2l3 3 6-6.4" />',
+  error: '<path d="M12 8v5M12 16.3v.2" />'
+};
+
+/** Маленький знак этапа: точка для доступного обновления, галочка или восклицательный знак. */
+function renderApplicationUpdateIndicator(status: ApplicationUpdateState['status']): string {
+  if (status === 'downloading') {
+    return '';
+  }
+
+  const mark = APPLICATION_UPDATE_INDICATOR_MARKS[status];
+  return `<span class="application-update-indicator" aria-hidden="true">${mark ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" focusable="false">${mark}</svg>` : ''}</span>`;
+}
+
+/** Список пунктов релиза: тип изменения служит коротким префиксом перед текстом. */
+function renderReleaseChangeList(changes: ReleaseChange[]): string {
+  const items = changes
+    .map(
+      (change) =>
+        `<li><span class="release-change-type">${escapeHtml(change.type)}</span><span>${escapeHtml(change.text)}</span></li>`
+    )
+    .join('');
+
+  return `<ul class="release-changes">${items}</ul>`;
 }
 
 /** Показывает подтверждение, когда установка закроет приложение с незавершёнными задачами. */
@@ -2763,6 +2915,33 @@ function bindSettingsEvents(): void {
     });
   });
 
+  document
+    .querySelector<HTMLButtonElement>('#check-application-update')
+    ?.addEventListener('click', () => {
+      void checkApplicationUpdate();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('[data-application-update-action]')
+    ?.addEventListener('click', () => {
+      void handleApplicationUpdateAction();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('#open-application-release')
+    ?.addEventListener('click', () => {
+      if (applicationUpdate?.releaseUrl) {
+        void window.ytdlp.openUrl(applicationUpdate.releaseUrl);
+      }
+    });
+
+  const changesDetails = document.querySelector<HTMLDetailsElement>('#application-update-changes');
+  if (changesDetails) {
+    changesDetails.addEventListener('toggle', () => {
+      isApplicationUpdateChangesOpen = changesDetails.open;
+    });
+  }
+
   bindConfigModalEvents();
 }
 
@@ -3089,14 +3268,6 @@ function bindEvents(): void {
     });
 
   document
-    .querySelector<HTMLButtonElement>('[data-open-application-release]')
-    ?.addEventListener('click', () => {
-      if (applicationUpdate?.releaseUrl) {
-        void window.ytdlp.openUrl(applicationUpdate.releaseUrl);
-      }
-    });
-
-  document
     .querySelector<HTMLButtonElement>('[data-cancel-application-update-install]')
     ?.addEventListener('click', () => {
       isInstallUpdateModalOpen = false;
@@ -3128,13 +3299,13 @@ function bindEvents(): void {
   }
 }
 
-/** Выполняет действие текущего этапа обновления: скачивание или переход к установке. */
+/** Выполняет действие текущего этапа: скачивание (или повтор после ошибки), открытие релиза или установку. */
 async function handleApplicationUpdateAction(): Promise<void> {
   if (!applicationUpdate) {
     return;
   }
 
-  if (applicationUpdate.status === 'available') {
+  if (applicationUpdate.status === 'available' || applicationUpdate.status === 'error') {
     if (applicationUpdate.requiresManualDownload && applicationUpdate.releaseUrl) {
       await window.ytdlp.openUrl(applicationUpdate.releaseUrl);
       return;
@@ -3184,6 +3355,26 @@ async function installApplicationUpdate(): Promise<void> {
   } catch (error) {
     isInstallUpdateModalOpen = false;
     runtimeNotice = error instanceof Error ? error.message : 'Не удалось установить обновление.';
+    render();
+  }
+}
+
+/**
+ * Запускает проверку обновления вручную. Результат приходит через onApplicationUpdate,
+ * а ошибка показывается только в секции настроек, без общего runtimeNotice.
+ */
+async function checkApplicationUpdate(): Promise<void> {
+  isApplicationUpdateCheckInProgress = true;
+  applicationUpdateCheckError = null;
+  render();
+
+  try {
+    await window.ytdlp.checkApplicationUpdate();
+  } catch (error) {
+    applicationUpdateCheckError =
+      error instanceof Error ? error.message : 'Не удалось проверить обновление.';
+  } finally {
+    isApplicationUpdateCheckInProgress = false;
     render();
   }
 }

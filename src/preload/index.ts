@@ -82,6 +82,9 @@ const api: YtdlpApi = {
   getApplicationUpdate() {
     return ipcRenderer.invoke('application-update:get');
   },
+  checkApplicationUpdate() {
+    return ipcRenderer.invoke('application-update:check');
+  },
   downloadApplicationUpdate() {
     return ipcRenderer.invoke('application-update:download');
   },

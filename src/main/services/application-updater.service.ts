@@ -6,11 +6,16 @@ import electronUpdater, {
   type UpdateInfo
 } from 'electron-updater';
 import type { ApplicationUpdateState } from '../../shared/types';
+import { isManualDownloadRequired } from '../application-update-capabilities';
 import { ApplicationUpdateError } from '../errors/application-update.error';
+import { parseReleaseChanges } from '../release-changes';
 import { DownloadsService } from './downloads.service';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron') as typeof import('electron');
+
+/** Интервал фоновой проверки обновлений в установленной сборке. */
+const UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
 type ApplicationUpdateSender = (update: ApplicationUpdateState) => void;
 
@@ -19,12 +24,13 @@ type ApplicationUpdateSender = (update: ApplicationUpdateState) => void;
 export class ApplicationUpdaterService {
   private updater: AppUpdater | null = null;
   private sender: ApplicationUpdateSender | null = null;
+  private checkTimer: NodeJS.Timeout | null = null;
   private isExplicitDownloadRequested = false;
   private state: Omit<ApplicationUpdateState, 'activeDownloadCount' | 'queuedDownloadCount'> = {
     status: 'idle',
     currentVersion: app.getVersion(),
     version: null,
-    releaseNotes: null,
+    changes: [],
     releaseUrl: null,
     downloadPercent: null,
     errorMessage: null,
@@ -38,7 +44,7 @@ export class ApplicationUpdaterService {
     this.sender = sender;
   }
 
-  /** Запускает тихую проверку только в установленной сборке. */
+  /** Запускает тихую проверку только в установленной сборке и повторяет её по расписанию. */
   initialize(): void {
     if (!app.isPackaged || this.updater) {
       return;
@@ -47,11 +53,11 @@ export class ApplicationUpdaterService {
     const { autoUpdater } = electronUpdater;
     this.updater = autoUpdater;
     this.updater.autoDownload = false;
-    this.updater.autoInstallOnAppQuit = false;
+    this.updater.autoInstallOnAppQuit = true;
     this.updater.allowPrerelease = true;
     this.updater.channel = 'alpha';
     this.registerUpdaterEvents(this.updater);
-    void this.checkForUpdates();
+    void this.checkForUpdatesSilently().finally(() => this.startPeriodicChecks());
   }
 
   /** Возвращает актуальное состояние вместе с числом незавершённых загрузок. */
@@ -64,15 +70,46 @@ export class ApplicationUpdaterService {
     };
   }
 
-  /** Скачивает уже найденное обновление по явному действию пользователя. */
+  /** Проверяет наличие обновления по явному действию пользователя и пробрасывает ошибку в UI. */
+  async check(): Promise<void> {
+    if (!this.updater) {
+      throw new ApplicationUpdateError(
+        'Проверка обновлений доступна только в установленной сборке.'
+      );
+    }
+
+    if (this.hasDownloadInProgressOrReady()) {
+      return;
+    }
+
+    try {
+      await this.updater.checkForUpdates();
+    } catch (error) {
+      throw new ApplicationUpdateError(
+        `Не удалось проверить обновления: ${getErrorMessage(error)}`
+      );
+    }
+  }
+
+  /** Скачивает уже найденное обновление по явному действию пользователя или повторяет неудачное скачивание. */
   async download(): Promise<void> {
-    if (!this.updater || this.state.status !== 'available') {
+    if (!this.updater || (this.state.status !== 'available' && this.state.status !== 'error')) {
       throw new ApplicationUpdateError('Обновление ещё не готово к скачиванию.');
     }
 
     this.isExplicitDownloadRequested = true;
     this.updateState({ status: 'downloading', downloadPercent: 0, errorMessage: null });
-    await this.updater.downloadUpdate();
+
+    try {
+      await this.updater.downloadUpdate();
+    } catch (error) {
+      // Если updater уже сообщил об ошибке событием, статус перестал быть downloading и повтор не нужен.
+      if (this.getState().status === 'downloading') {
+        this.markDownloadFailed(error);
+      }
+    } finally {
+      this.isExplicitDownloadRequested = false;
+    }
   }
 
   /** Устанавливает скачанное обновление после подтверждения прерывания задач. */
@@ -103,7 +140,7 @@ export class ApplicationUpdaterService {
   }
 
   /** Выполняет проверку без пользовательской ошибки, когда GitHub временно недоступен. */
-  private async checkForUpdates(): Promise<void> {
+  private async checkForUpdatesSilently(): Promise<void> {
     try {
       await this.updater?.checkForUpdates();
     } catch {
@@ -111,16 +148,32 @@ export class ApplicationUpdaterService {
     }
   }
 
+  /** Запускает периодическую фоновую проверку; во время скачивания или готовой установки она пропускается. */
+  private startPeriodicChecks(): void {
+    this.checkTimer = setInterval(() => {
+      if (this.hasDownloadInProgressOrReady()) {
+        return;
+      }
+
+      void this.checkForUpdatesSilently();
+    }, UPDATE_CHECK_INTERVAL_MS);
+    this.checkTimer.unref();
+  }
+
   /** Сохраняет метаданные найденного релиза до явного скачивания. */
   private handleUpdateAvailable(info: UpdateInfo): void {
+    if (this.hasDownloadInProgressOrReady()) {
+      return;
+    }
+
     this.updateState({
       status: 'available',
       version: info.version,
-      releaseNotes: this.formatReleaseNotes(info.releaseNotes),
+      changes: parseReleaseChanges(info.releaseNotes),
       releaseUrl: `https://github.com/Alamonall/Savvy/releases/tag/v${info.version}`,
       downloadPercent: null,
       errorMessage: null,
-      requiresManualDownload: process.platform === 'linux' && !process.env.APPIMAGE
+      requiresManualDownload: isManualDownloadRequired(process.platform, process.env.APPIMAGE)
     });
   }
 
@@ -134,7 +187,7 @@ export class ApplicationUpdaterService {
     this.updateState({
       status: 'downloaded',
       version: info.version,
-      releaseNotes: this.formatReleaseNotes(info.releaseNotes),
+      changes: parseReleaseChanges(info.releaseNotes),
       downloadPercent: 100,
       errorMessage: null
     });
@@ -146,26 +199,21 @@ export class ApplicationUpdaterService {
       return;
     }
 
-    this.isExplicitDownloadRequested = false;
+    this.markDownloadFailed(error);
+  }
+
+  /** Переводит состояние в ошибку скачивания, сохраняя данные релиза для повторной попытки. */
+  private markDownloadFailed(error: unknown): void {
     this.updateState({
-      status: 'available',
+      status: 'error',
       downloadPercent: null,
-      errorMessage: `Не удалось скачать обновление: ${error.message}`
+      errorMessage: `Не удалось скачать обновление: ${getErrorMessage(error)}`
     });
   }
 
-  /** Приводит Notes GitHub к короткому тексту для tooltip без HTML из внешнего источника. */
-  private formatReleaseNotes(notes: UpdateInfo['releaseNotes']): string | null {
-    if (typeof notes === 'string') {
-      return notes.trim() || null;
-    }
-
-    const text = notes
-      ?.map((note) => note.note)
-      .filter(Boolean)
-      .join('\n')
-      .trim();
-    return text || null;
+  /** Проверяет, идёт ли скачивание или уже готов пакет, которое нельзя сбрасывать проверкой. */
+  private hasDownloadInProgressOrReady(): boolean {
+    return this.state.status === 'downloading' || this.state.status === 'downloaded';
   }
 
   /** Обновляет локальное состояние и уведомляет подключённый renderer. */
@@ -173,4 +221,9 @@ export class ApplicationUpdaterService {
     this.state = { ...this.state, ...nextState };
     this.sender?.(this.getState());
   }
+}
+
+/** Достаёт читаемый текст из ошибки любого типа, которую мог выбросить electron-updater. */
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
