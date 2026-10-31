@@ -27,6 +27,10 @@ test('иконка обновления в topbar заменяет тексто�
   assert.match(iconSource, /class="application-update-indicator"/);
   assert.match(iconSource, /stroke-dashoffset="\$\{/);
   assert.match(iconSource, /status === 'idle'/);
+  assert.doesNotMatch(
+    iconSource,
+    /if \(!applicationUpdate \|\| applicationUpdate\.status === 'idle'\) \{\s*return '';/
+  );
   assert.doesNotMatch(iconSource, />\$\{escapeHtml\(label\)\}</);
   assert.match(
     renderer,
@@ -44,9 +48,29 @@ test('aria-label иконки описывает этап и действие, �
   assert.match(iconSource, /'Открыть релиз'/);
   assert.match(
     iconSource,
-    /aria-label="\$\{escapeHtml\(getApplicationUpdateActionLabel\(update\)\)\}"/
+    /aria-label="\$\{escapeHtml\(getApplicationUpdateActionLabel\(stage, update\)\)\}"/
   );
-  assert.match(iconSource, /\$\{isDownloading \? 'disabled' : ''\}/);
+  assert.match(iconSource, /\$\{isDisabled \? 'disabled' : ''\}/);
+});
+
+test('иконка видна без найденного обновления и запускает проверку', () => {
+  const iconSource = topbarIconSource();
+  const handlerSource = sourceBetween(
+    'async function handleApplicationUpdateAction',
+    'function getPendingQueueTaskCounts'
+  );
+
+  assert.match(iconSource, /'Проверить обновления'/);
+  assert.match(iconSource, /'Проверка обновлений…'/);
+  assert.match(iconSource, /'Установлена последняя версия'/);
+  assert.match(iconSource, /'Повторить проверку обновлений'/);
+  assert.match(iconSource, /'checking'/);
+  assert.match(iconSource, /'up-to-date'/);
+  assert.match(iconSource, /'check-error'/);
+  assert.match(
+    handlerSource,
+    /!applicationUpdate \|\| applicationUpdate\.status === 'idle'\) \{\s*await checkApplicationUpdate\(\)/
+  );
 });
 
 test('tooltip обновления показывает версии, первые 5 пунктов и без кнопок', () => {
@@ -66,6 +90,26 @@ test('tooltip обновления показывает версии, первы
   );
   assert.doesNotMatch(tooltipSource, /<button/);
   assert.match(styles, /\.application-update-tooltip/);
+});
+
+test('подсказка найденного обновления содержит ссылку на релиз, которая открывается через openUrl', () => {
+  const iconSource = topbarIconSource();
+  const bindingsSource = sourceBetween(
+    'function bindEvents',
+    'async function handleApplicationUpdateAction'
+  );
+
+  assert.match(iconSource, /update\.releaseUrl \?/);
+  assert.match(iconSource, /class="application-update-release-link"/);
+  assert.match(iconSource, /href="\$\{escapeHtml\(update\.releaseUrl\)\}"/);
+  assert.match(iconSource, /data-application-release-link/);
+  assert.match(iconSource, /Открыть на GitHub/);
+  assert.match(bindingsSource, /\[data-application-release-link\]/);
+  assert.match(bindingsSource, /event\.preventDefault\(\)/);
+  assert.match(bindingsSource, /openUrl\(applicationUpdate\.releaseUrl\)/);
+  assert.match(styles, /\.application-update-release-link/);
+  assert.match(styles, /\.application-update-tooltip::before/);
+  assert.match(styles, /\[data-theme='dark'\] \.application-update-release-link/);
 });
 
 test('клик по иконке выполняет действие этапа, включая повтор скачивания после ошибки', () => {
@@ -153,6 +197,10 @@ test('стили индикатора обновления описывают в
   assert.match(styles, /\[data-update-stage='downloading'\]/);
   assert.match(styles, /\[data-update-stage='downloaded'\]/);
   assert.match(styles, /\[data-update-stage='error'\]/);
+  assert.match(styles, /\[data-update-stage='checking'\]/);
+  assert.match(styles, /\[data-update-stage='up-to-date'\]/);
+  assert.match(styles, /\[data-update-stage='check-error'\]/);
+  assert.match(styles, /prefers-reduced-motion/);
   assert.match(styles, /\.application-update-button:disabled/);
   assert.match(styles, /\.application-update-button:focus-visible/);
   assert.match(styles, /\[data-theme='dark'\] \.application-update-button/);

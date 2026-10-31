@@ -102,12 +102,38 @@ button {
   color: #2f80ed;
 }
 
-.application-update .application-update-button[data-update-stage='downloaded'] {
+.application-update .application-update-button[data-update-stage='downloaded'],
+.application-update .application-update-button[data-update-stage='up-to-date'] {
   color: #1f7a4d;
 }
 
-.application-update .application-update-button[data-update-stage='error'] {
+.application-update .application-update-button[data-update-stage='error'],
+.application-update .application-update-button[data-update-stage='check-error'] {
   color: #b42318;
+}
+
+.application-update .application-update-button[data-update-stage='checking'] {
+  color: #2f80ed;
+}
+
+.application-update
+  .application-update-button[data-update-stage='checking']
+  .application-update-icon {
+  animation: application-update-spin 1s linear infinite;
+}
+
+@keyframes application-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .application-update
+    .application-update-button[data-update-stage='checking']
+    .application-update-icon {
+    animation: none;
+  }
 }
 
 .application-update .application-update-button:disabled {
@@ -193,6 +219,32 @@ button {
 .application-update:hover .application-update-tooltip,
 .application-update:focus-within .application-update-tooltip {
   display: block;
+}
+
+/* Невидимый мост через зазор под иконкой, чтобы курсор мог дойти до ссылки в подсказке. */
+.application-update-tooltip::before {
+  position: absolute;
+  top: -8px;
+  right: 0;
+  left: 0;
+  height: 8px;
+  content: '';
+}
+
+.application-update-release-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #2f80ed;
+  text-decoration: none;
+}
+
+.application-update-release-link:hover {
+  text-decoration: underline;
+}
+
+.application-update-release-link:focus-visible {
+  outline: 2px solid #2f80ed;
+  outline-offset: 2px;
 }
 
 .application-update-tooltip strong {
@@ -1986,11 +2038,17 @@ label.settings-option {
   color: #60a5fa;
 }
 
-[data-theme='dark'] .application-update-button[data-update-stage='downloaded'] {
+[data-theme='dark'] .application-update-button[data-update-stage='checking'] {
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .application-update-button[data-update-stage='downloaded'],
+[data-theme='dark'] .application-update-button[data-update-stage='up-to-date'] {
   color: #4ade80;
 }
 
-[data-theme='dark'] .application-update-button[data-update-stage='error'] {
+[data-theme='dark'] .application-update-button[data-update-stage='error'],
+[data-theme='dark'] .application-update-button[data-update-stage='check-error'] {
   color: #fca5a5;
 }
 
@@ -2022,6 +2080,14 @@ label.settings-option {
 
 [data-theme='dark'] .application-update-tooltip p {
   color: #9ca3af;
+}
+
+[data-theme='dark'] .application-update-release-link {
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .application-update-release-link:focus-visible {
+  outline-color: #60a5fa;
 }
 
 [data-theme='dark'] .release-change-type {
