@@ -2540,6 +2540,7 @@ function renderApplicationUpdateTooltipContent(
         <strong>${escapeHtml(versionLine)}</strong>
         ${shownChanges.length ? renderReleaseChangeList(shownChanges) : '<p>Список изменений недоступен</p>'}
         ${hiddenChangesCount > 0 ? `<p>и ещё ${hiddenChangesCount}</p>` : ''}
+        ${update.releaseUrl ? `<a class="application-update-release-link" href="${escapeHtml(update.releaseUrl)}" data-application-release-link>Открыть на GitHub</a>` : ''}
     `;
   }
 
@@ -3336,6 +3337,15 @@ function bindEvents(): void {
     .querySelector<HTMLButtonElement>('[data-application-update]')
     ?.addEventListener('click', () => {
       void handleApplicationUpdateAction();
+    });
+
+  document
+    .querySelector<HTMLAnchorElement>('[data-application-release-link]')
+    ?.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (applicationUpdate?.releaseUrl) {
+        void window.ytdlp.openUrl(applicationUpdate.releaseUrl);
+      }
     });
 
   document

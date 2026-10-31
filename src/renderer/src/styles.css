@@ -221,6 +221,32 @@ button {
   display: block;
 }
 
+/* Невидимый мост через зазор под иконкой, чтобы курсор мог дойти до ссылки в подсказке. */
+.application-update-tooltip::before {
+  position: absolute;
+  top: -8px;
+  right: 0;
+  left: 0;
+  height: 8px;
+  content: '';
+}
+
+.application-update-release-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #2f80ed;
+  text-decoration: none;
+}
+
+.application-update-release-link:hover {
+  text-decoration: underline;
+}
+
+.application-update-release-link:focus-visible {
+  outline: 2px solid #2f80ed;
+  outline-offset: 2px;
+}
+
 .application-update-tooltip strong {
   display: block;
   margin-bottom: 8px;
@@ -2054,6 +2080,14 @@ label.settings-option {
 
 [data-theme='dark'] .application-update-tooltip p {
   color: #9ca3af;
+}
+
+[data-theme='dark'] .application-update-release-link {
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .application-update-release-link:focus-visible {
+  outline-color: #60a5fa;
 }
 
 [data-theme='dark'] .release-change-type {

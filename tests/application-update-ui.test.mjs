@@ -92,6 +92,26 @@ test('tooltip обновления показывает версии, первы
   assert.match(styles, /\.application-update-tooltip/);
 });
 
+test('подсказка найденного обновления содержит ссылку на релиз, которая открывается через openUrl', () => {
+  const iconSource = topbarIconSource();
+  const bindingsSource = sourceBetween(
+    'function bindEvents',
+    'async function handleApplicationUpdateAction'
+  );
+
+  assert.match(iconSource, /update\.releaseUrl \?/);
+  assert.match(iconSource, /class="application-update-release-link"/);
+  assert.match(iconSource, /href="\$\{escapeHtml\(update\.releaseUrl\)\}"/);
+  assert.match(iconSource, /data-application-release-link/);
+  assert.match(iconSource, /Открыть на GitHub/);
+  assert.match(bindingsSource, /\[data-application-release-link\]/);
+  assert.match(bindingsSource, /event\.preventDefault\(\)/);
+  assert.match(bindingsSource, /openUrl\(applicationUpdate\.releaseUrl\)/);
+  assert.match(styles, /\.application-update-release-link/);
+  assert.match(styles, /\.application-update-tooltip::before/);
+  assert.match(styles, /\[data-theme='dark'\] \.application-update-release-link/);
+});
+
 test('клик по иконке выполняет действие этапа, включая повтор скачивания после ошибки', () => {
   const handlerSource = sourceBetween(
     'async function handleApplicationUpdateAction',
