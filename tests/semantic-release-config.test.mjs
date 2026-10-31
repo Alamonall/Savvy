@@ -12,15 +12,17 @@ const releaseConfig = JSON.parse(
   await readFile(new URL('../.releaserc.json', import.meta.url), 'utf8')
 );
 
-test('release workflow runs alpha releases on the default branch and stable releases manually', () => {
-  assert.match(workflow, /\n\s+- master/);
+test('release workflow runs alpha releases on a weekly schedule and stable releases manually', () => {
+  assert.match(workflow, /\non:\n\s+schedule:\n/);
+  assert.match(workflow, /- cron: '0 6 \* \* 1'/);
+  assert.doesNotMatch(workflow, /\n\s+push:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /github\.event_name.*workflow_dispatch/);
   assert.match(workflow, /should-release:/);
   assert.match(workflow, /0\.0\.1-alpha\.1/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /conventional-changelog/);
-  assert.match(workflow, /stable_tag=.*git tag --list/);
+  assert.match(workflow, /last_tag=.*git tag --list 'v\*' --sort=-creatordate/);
   assert.match(workflow, /alpha_tag=.*git tag --list/);
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /issues:\s*write/);
@@ -68,9 +70,10 @@ test('first alpha release uses the requested version', () => {
   assert.match(workflow, /base_version=.*INITIAL_RELEASE_VERSION/);
 });
 
-test('pushes to master calculate incrementing alpha versions without changing the base version', () => {
+test('scheduled runs calculate incrementing alpha versions without changing the base version', () => {
   assert.match(workflow, /RELEASE_CHANNEL.*alpha/);
-  assert.match(workflow, /stable_tag=.*git tag --list 'v\[0-9\]\+\.\[0-9\]\+\.\[0-9\]\+'/);
+  assert.match(workflow, /last_tag=.*git tag --list 'v\*' --sort=-creatordate/);
+  assert.match(workflow, /git diff --quiet "\$last_tag" HEAD/);
   assert.match(workflow, /alpha_tag=.*git tag --list/);
   assert.match(workflow, /echo "version=\$\{base_version\}-alpha\.\$\{alpha_number\}"/);
   assert.match(workflow, /gh release create/);
