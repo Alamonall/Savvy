@@ -98,6 +98,7 @@ test('interrupted releases are re-published on the same tag', () => {
   assert.match(workflow, /release_complete\(\) \{/);
   assert.match(workflow, /release_complete "\$last_version"/);
   assert.match(workflow, /git ls-remote --exit-code --tags origin/);
+  assert.match(workflow, /git diff --quiet "v\$\{RELEASE_VERSION\}" HEAD/);
   assert.match(workflow, /gh release upload .* --clobber/);
 });
 

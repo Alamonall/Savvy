@@ -261,8 +261,13 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           # Тег уже в origin — это повтор после сбоя: используем его, а не создаём заново.
+          # Тег другой ветки с тем же номером версии не трогаем: сравниваем дерево тега с деревом сборки.
           if git ls-remote --exit-code --tags origin "refs/tags/v${RELEASE_VERSION}" >/dev/null; then
-            echo "Тег v${RELEASE_VERSION} уже есть в origin, перевыпускаем релиз на нём."
+            if ! git diff --quiet "v${RELEASE_VERSION}" HEAD; then
+              echo "::error::Тег v${RELEASE_VERSION} уже есть в origin и указывает на другое состояние. Укажите новую версию."
+              exit 1
+            fi
+            echo "Тег v${RELEASE_VERSION} уже есть в origin с тем же состоянием, перевыпускаем релиз на нём."
           else
             git tag -a "v${RELEASE_VERSION}" -m "Релиз ${RELEASE_VERSION}"
             git push origin "refs/tags/v${RELEASE_VERSION}"
