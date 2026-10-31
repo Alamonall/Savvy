@@ -1,10 +1,24 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - master
+  schedule:
+    # Раз в неделю, по понедельникам в 06:00 UTC (09:00 по Москве). Cron в GitHub Actions задаётся в UTC.
+    - cron: '0 6 * * 1'
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Канал выпуска. Плановый запуск всегда выпускает alpha.
+        type: choice
+        options:
+          - stable
+          - alpha
+        default: stable
+        required: true
+      version:
+        description: Версия stable-релиза X.Y.Z. Пусто — взять из последнего alpha-цикла. Нужна, если версия уже опубликована.
+        type: string
+        default: ''
+        required: false
 
 permissions:
   contents: write
@@ -45,35 +59,81 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INITIAL_RELEASE_VERSION: ${{ env.INITIAL_RELEASE_VERSION }}
-          RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'alpha' }}
+          RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.channel || 'stable') || 'alpha' }}
+          RELEASE_VERSION_OVERRIDE: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
-          # Последняя стабильная версия задаёт основу следующего alpha-цикла.
-          # stable_tag=git tag --list 'v[0-9]+.[0-9]+.[0-9]+'
-          stable_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          # Теги берём только из истории текущего коммита: stable-тег из другой ветки не должен
+          # влиять на версию. Сортировка по дате создания: по номеру старые теги v1.x от другой
+          # линии дают номер выше текущего 0.0.x.
+          last_tag="$(git tag --merged HEAD --list 'v*' --sort=-creatordate | head -n 1 || true)"
+          last_version="${last_tag#v}"
+
+          # Тег может существовать без релиза, если предыдущий запуск упал после push тега.
+          # Релиз считается готовым, только если в нём есть установщики всех платформ.
+          release_complete() {
+            gh release view "v$1" --json assets --jq '[.assets[].name] | (any(endswith(".AppImage")) and any(endswith(".dmg")) and any(endswith(".exe")))' 2>/dev/null | grep -qx true
+          }
+
           if [ "$RELEASE_CHANNEL" = "stable" ]; then
-            latest_alpha_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*' | sort -V | tail -n 1 || true)"
-            if [ -n "$latest_alpha_tag" ]; then
-              stable_version="${latest_alpha_tag#v}"
-              stable_version="${stable_version%-alpha.*}"
-            elif [ -n "$stable_tag" ]; then
-              stable_version="${stable_tag#v}"
+            if [ -n "$RELEASE_VERSION_OVERRIDE" ]; then
+              stable_version="$RELEASE_VERSION_OVERRIDE"
             else
-              stable_version="${INITIAL_RELEASE_VERSION%-alpha.*}"
+              latest_alpha_tag="$(git tag --merged HEAD --list 'v*-alpha.*' --sort=-creatordate | head -n 1 || true)"
+              if [ -n "$latest_alpha_tag" ]; then
+                stable_version="${latest_alpha_tag#v}"
+                stable_version="${stable_version%-alpha.*}"
+              elif [ -n "$last_tag" ]; then
+                stable_version="$last_version"
+              else
+                stable_version="${INITIAL_RELEASE_VERSION%-alpha.*}"
+              fi
+            fi
+            if [[ ! "$stable_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Версия stable-релиза должна быть в формате X.Y.Z: $stable_version"
+              exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/v${stable_version}" >/dev/null; then
+              if release_complete "$stable_version"; then
+                echo "::error::Версия ${stable_version} уже опубликована. Укажите новую версию в поле version."
+                exit 1
+              fi
+              if ! git diff --quiet "v${stable_version}" HEAD; then
+                echo "::error::Тег v${stable_version} есть без релиза и указывает на другое состояние. Укажите новую версию в поле version."
+                exit 1
+              fi
+              echo "Тег v${stable_version} есть без полного релиза, перевыпускаем его."
             fi
             echo "should-release=true" >> "$GITHUB_OUTPUT"
             echo "version=$stable_version" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if [ -n "$stable_tag" ]; then
-            stable_version="${stable_tag#v}"
-            base_version="$(node --input-type=module -e "const [major, minor, patch] = process.argv[1].split('.').map(Number); console.log([major, minor, patch + 1].join('.'))" "$stable_version")"
+          # Плановый alpha-релиз выходит только если дерево изменилось после последнего релиза.
+          if [ -n "$last_tag" ] && git diff --quiet "$last_tag" HEAD; then
+            if [[ "$last_version" == *-alpha.* ]] && ! release_complete "$last_version"; then
+              echo "Изменений после $last_tag нет, но его релиз не завершён: перевыпускаем."
+              echo "should-release=true" >> "$GITHUB_OUTPUT"
+              echo "version=${last_version}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Изменений после $last_tag нет, релиз не выходит."
+            echo "should-release=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$last_version" == *-alpha.* ]]; then
+            # Идёт alpha-цикл: основа та же, меняется только номер alpha.
+            base_version="${last_version%-alpha.*}"
+          elif [ -n "$last_tag" ]; then
+            # Последний релиз стабильный: следующий alpha-цикл начинается с патча + 1.
+            base_version="$(node --input-type=module -e "const [major, minor, patch] = process.argv[1].split('.').map(Number); console.log([major, minor, patch + 1].join('.'))" "$last_version")"
           else
             base_version="${INITIAL_RELEASE_VERSION%-alpha.*}"
           fi
           # До Stable увеличивается только следующий alpha number.
-          alpha_tag="$(git tag --list "v${base_version}-alpha.*" | sort -V | tail -n 1 || true)"
+          alpha_tag="$(git tag --merged HEAD --list "v${base_version}-alpha.*" | sort -V | tail -n 1 || true)"
           alpha_number=1
           if [ -n "$alpha_tag" ]; then
             alpha_number="$(( ${alpha_tag##*.} + 1 ))"
@@ -191,7 +251,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           INITIAL_RELEASE_VERSION: ${{ env.INITIAL_RELEASE_VERSION }}
-          RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'alpha' }}
+          RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.channel || 'stable') || 'alpha' }}
         run: |
           set -euo pipefail
           # Версия пишется только в рабочую копию: правила репозитория запрещают прямые
@@ -200,9 +260,21 @@ jobs:
           npx conventional-changelog -p conventionalcommits -o release-notes.md -r 1
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git tag -a "v${RELEASE_VERSION}" -m "Релиз ${RELEASE_VERSION}"
-          git push origin "refs/tags/v${RELEASE_VERSION}"
-          if [ "$RELEASE_CHANNEL" = "stable" ]; then
+          # Тег уже в origin — это повтор после сбоя: используем его, а не создаём заново.
+          # Тег другой ветки с тем же номером версии не трогаем: сравниваем дерево тега с деревом сборки.
+          if git ls-remote --exit-code --tags origin "refs/tags/v${RELEASE_VERSION}" >/dev/null; then
+            if ! git diff --quiet "v${RELEASE_VERSION}" HEAD; then
+              echo "::error::Тег v${RELEASE_VERSION} уже есть в origin и указывает на другое состояние. Укажите новую версию."
+              exit 1
+            fi
+            echo "Тег v${RELEASE_VERSION} уже есть в origin с тем же состоянием, перевыпускаем релиз на нём."
+          else
+            git tag -a "v${RELEASE_VERSION}" -m "Релиз ${RELEASE_VERSION}"
+            git push origin "refs/tags/v${RELEASE_VERSION}"
+          fi
+          if gh release view "v${RELEASE_VERSION}" >/dev/null 2>&1; then
+            gh release upload "v${RELEASE_VERSION}" release-assets/* --clobber
+          elif [ "$RELEASE_CHANNEL" = "stable" ]; then
             gh release create "v${RELEASE_VERSION}" release-assets/* \
               --title "${RELEASE_VERSION}" --notes-file release-notes.md
           else
