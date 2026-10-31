@@ -1373,7 +1373,7 @@ label.settings-option {
   text-align: center;
 }
 
-.task-day-hide-completed {
+.task-day-hide-inactive {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1383,7 +1383,7 @@ label.settings-option {
   white-space: nowrap;
 }
 
-.task-day-hide-completed input {
+.task-day-hide-inactive input {
   width: 16px;
   height: 16px;
   padding: 0;
@@ -1832,7 +1832,7 @@ label.settings-option {
 [data-theme='dark'] .settings-option-description,
 [data-theme='dark'] .config-versions li,
 [data-theme='dark'] .task-day-arrow,
-[data-theme='dark'] .task-day-hide-completed {
+[data-theme='dark'] .task-day-hide-inactive {
   color: #9ca3af;
 }
 

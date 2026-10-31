@@ -16,6 +16,7 @@ import {
   parseBrowserCookies,
   type BrowserCookiesSpec
 } from '../../shared/browser-cookies';
+import { filterVisibleTasks } from '../../shared/task-activity';
 import './styles.css';
 
 type Tab = 'queue' | 'settings';
@@ -121,7 +122,7 @@ let ytdlpLatestReleaseVersion: string | null = null;
 let effectiveOptionsPreview = '';
 let effectiveConfigText = '';
 let textConfigDraft: string | null = null;
-let hideCompleted = localStorage.getItem('ytdlp-hide-completed') === 'true';
+let hideInactive = localStorage.getItem('ytdlp-hide-inactive') === 'true';
 let collapsedDays = readCollapsedDays();
 const collapsedSettingsSections = readCollapsedSettingsSections();
 let expandedUrlGroups = readExpandedUrlGroups();
@@ -1274,9 +1275,7 @@ function applyPendingQueue(): void {
 }
 
 function getVisibleQueue(): DownloadTask[] {
-  return hideCompleted
-    ? queue.filter((task) => task.status !== 'done' && task.status !== 'failed')
-    : queue;
+  return filterVisibleTasks(queue, hideInactive);
 }
 
 function formatQueueCount(tasks: DownloadTask[]): string {
@@ -2275,9 +2274,7 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
   return groupQueueByDay(tasks)
     .map((group) => {
       const isCollapsed = collapsedDays[group.dayKey] === true;
-      const visibleGroupTasks = hideCompleted
-        ? group.tasks.filter((task) => task.status !== 'done' && task.status !== 'failed')
-        : group.tasks;
+      const visibleGroupTasks = filterVisibleTasks(group.tasks, hideInactive);
 
       return `
         <section class="task-day-group">
@@ -2293,9 +2290,9 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
                 <span class="task-day-stat total">${group.totalCount}</span>
               </span>
             </button>
-            <label class="task-day-hide-completed" title="Скрыть завершенные задачи во всех датах">
-              <input data-hide-completed-toggle type="checkbox" ${hideCompleted ? 'checked' : ''} />
-              <span>Скрыть завершенные</span>
+            <label class="task-day-hide-inactive" title="Скрыть неактивные задачи во всех датах">
+              <input data-hide-inactive-toggle type="checkbox" ${hideInactive ? 'checked' : ''} />
+              <span>Скрыть неактивные</span>
             </label>
           </div>
           <div class="task-day-items ${isCollapsed ? 'collapsed' : ''}">
@@ -2315,7 +2312,7 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
                           : renderTaskMarkup(urlGroup.tasks[0], selectedTask)
                       )
                       .join('')
-                  : '<p class="empty">Завершенные задачи скрыты.</p>'
+                  : '<p class="empty">Неактивные задачи скрыты.</p>'
             }
           </div>
         </section>
@@ -2442,7 +2439,7 @@ function refreshQueueView(): void {
 
   bindQueueTaskEvents();
   bindQueueGroupEvents();
-  bindHideCompletedToggle();
+  bindHideInactiveToggle();
 }
 
 function refreshViewAfterQueueUpdate(): void {
@@ -3303,20 +3300,18 @@ function bindQueueGroupEvents(): void {
 }
 
 /** Флажок находится внутри `#task-list`, поэтому обработчик нужно вешать после каждой перерисовки списка. */
-function bindHideCompletedToggle(): void {
-  document
-    .querySelectorAll<HTMLInputElement>('[data-hide-completed-toggle]')
-    .forEach((checkbox) => {
-      checkbox.addEventListener('change', () => {
-        hideCompleted = checkbox.checked;
-        localStorage.setItem('ytdlp-hide-completed', String(hideCompleted));
-        render();
-      });
+function bindHideInactiveToggle(): void {
+  document.querySelectorAll<HTMLInputElement>('[data-hide-inactive-toggle]').forEach((checkbox) => {
+    checkbox.addEventListener('change', () => {
+      hideInactive = checkbox.checked;
+      localStorage.setItem('ytdlp-hide-inactive', String(hideInactive));
+      render();
     });
+  });
 }
 
 function bindQueueStaticEvents(): void {
-  bindHideCompletedToggle();
+  bindHideInactiveToggle();
 
   document.querySelector<HTMLFormElement>('#add-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -3982,7 +3977,10 @@ function openHttp403UpdateRecommendation(): void {
 async function cancelDownload(taskId: string): Promise<void> {
   try {
     const task = await window.ytdlp.cancelDownload(taskId);
-    selectedTaskId = task.id;
+    // Отменённая задача неактивна: при включённом скрытии она исчезает из списка, выбирать её не нужно.
+    if (!hideInactive) {
+      selectedTaskId = task.id;
+    }
     currentTab = 'queue';
     render();
   } catch (error) {
