@@ -132,6 +132,7 @@ let settingsSearchQuery = '';
 let applicationUpdate: ApplicationUpdateState | null = null;
 let isApplicationUpdateCheckInProgress = false;
 let applicationUpdateCheckError: string | null = null;
+let isApplicationUpdateUpToDate = false;
 let isApplicationUpdateChangesOpen = false;
 let settings: AppSettings = {
   ytdlpPath: '',
@@ -2478,41 +2479,89 @@ function toggleTheme(): void {
   render();
 }
 
-/**
- * Рендерит иконку обновления в topbar: этап передаётся цветом, знаком и кольцом прогресса,
- * а текст доступен только через aria-label и подсказку.
- */
-function renderApplicationUpdateButton(): string {
-  if (!applicationUpdate || applicationUpdate.status === 'idle') {
-    return '';
+type ApplicationUpdateStage =
+  ApplicationUpdateState['status'] | 'checking' | 'up-to-date' | 'check-error';
+
+/** Этап иконки: к статусу updater добавлены состояния ручной проверки, пока обновления нет. */
+function getApplicationUpdateStage(): ApplicationUpdateStage {
+  const status = applicationUpdate?.status ?? 'idle';
+  if (status !== 'idle') {
+    return status;
   }
 
+  if (isApplicationUpdateCheckInProgress) {
+    return 'checking';
+  }
+
+  if (applicationUpdateCheckError) {
+    return 'check-error';
+  }
+
+  return isApplicationUpdateUpToDate ? 'up-to-date' : 'idle';
+}
+
+/**
+ * Рендерит иконку обновления в topbar: этап передаётся цветом, знаком и кольцом прогресса,
+ * а текст доступен только через aria-label и подсказку. Без найденного обновления иконка
+ * запускает проверку.
+ */
+function renderApplicationUpdateButton(): string {
   const update = applicationUpdate;
-  const isDownloading = update.status === 'downloading';
-  const versionLine = update.version
-    ? `${update.currentVersion} → ${update.version}`
-    : update.currentVersion;
-  const shownChanges = update.changes.slice(0, 5);
-  const hiddenChangesCount = update.changes.length - shownChanges.length;
+  const stage = getApplicationUpdateStage();
+  const isDisabled = stage === 'downloading' || stage === 'checking';
 
   return `
     <div class="application-update">
-      <button class="ghost bordered theme-toggle application-update-button" data-application-update data-update-stage="${update.status}" type="button" aria-label="${escapeHtml(getApplicationUpdateActionLabel(update))}" aria-describedby="application-update-tooltip" ${isDownloading ? 'disabled' : ''}>
-        ${isDownloading ? renderApplicationUpdateRing(getApplicationUpdatePercent(update.downloadPercent)) : ''}
-        ${renderApplicationUpdateIcon(update.requiresManualDownload)}
-        ${renderApplicationUpdateIndicator(update.status)}
+      <button class="ghost bordered theme-toggle application-update-button" data-application-update data-update-stage="${stage}" type="button" aria-label="${escapeHtml(getApplicationUpdateActionLabel(stage, update))}" aria-describedby="application-update-tooltip" ${isDisabled ? 'disabled' : ''}>
+        ${stage === 'downloading' ? renderApplicationUpdateRing(getApplicationUpdatePercent(update?.downloadPercent ?? null)) : ''}
+        ${renderApplicationUpdateIcon(stage, update?.requiresManualDownload ?? false)}
+        ${renderApplicationUpdateIndicator(stage)}
       </button>
       <div class="application-update-tooltip" id="application-update-tooltip" role="tooltip">
-        <strong>${escapeHtml(versionLine)}</strong>
-        ${shownChanges.length ? renderReleaseChangeList(shownChanges) : '<p>Список изменений недоступен</p>'}
-        ${hiddenChangesCount > 0 ? `<p>и ещё ${hiddenChangesCount}</p>` : ''}
+        ${renderApplicationUpdateTooltipContent(stage, update)}
       </div>
     </div>
   `;
 }
 
+/** Содержимое подсказки: версии и список изменений для найденного обновления, иначе состояние проверки. */
+function renderApplicationUpdateTooltipContent(
+  stage: ApplicationUpdateStage,
+  update: ApplicationUpdateState | null
+): string {
+  if (update && update.status !== 'idle') {
+    const versionLine = update.version
+      ? `${update.currentVersion} → ${update.version}`
+      : update.currentVersion;
+    const shownChanges = update.changes.slice(0, 5);
+    const hiddenChangesCount = update.changes.length - shownChanges.length;
+
+    return `
+        <strong>${escapeHtml(versionLine)}</strong>
+        ${shownChanges.length ? renderReleaseChangeList(shownChanges) : '<p>Список изменений недоступен</p>'}
+        ${hiddenChangesCount > 0 ? `<p>и ещё ${hiddenChangesCount}</p>` : ''}
+    `;
+  }
+
+  const message =
+    stage === 'check-error'
+      ? applicationUpdateCheckError
+      : getApplicationUpdateActionLabel(stage, update);
+  return `
+        ${update ? `<strong>${escapeHtml(update.currentVersion)}</strong>` : ''}
+        <p>${escapeHtml(message ?? '')}</p>
+  `;
+}
+
 /** Подпись иконки: название этапа и действие, которое выполнит клик. */
-function getApplicationUpdateActionLabel(update: ApplicationUpdateState): string {
+function getApplicationUpdateActionLabel(
+  stage: ApplicationUpdateStage,
+  update: ApplicationUpdateState | null
+): string {
+  if (!update || update.status === 'idle') {
+    return IDLE_APPLICATION_UPDATE_LABELS[stage] ?? 'Проверить обновления';
+  }
+
   if (update.requiresManualDownload && update.releaseUrl) {
     return 'Открыть релиз';
   }
@@ -2532,6 +2581,12 @@ function getApplicationUpdateActionLabel(update: ApplicationUpdateState): string
   return withUpdateVersion('Скачать обновление', update.version);
 }
 
+const IDLE_APPLICATION_UPDATE_LABELS: Partial<Record<ApplicationUpdateStage, string>> = {
+  checking: 'Проверка обновлений…',
+  'up-to-date': 'Установлена последняя версия',
+  'check-error': 'Повторить проверку обновлений'
+};
+
 function withUpdateVersion(title: string, version: string | null): string {
   return version ? `${title} ${version}` : title;
 }
@@ -2541,11 +2596,27 @@ function getApplicationUpdatePercent(percent: number | null): number {
   return Math.min(100, Math.max(0, Math.round(percent ?? 0)));
 }
 
-/** Стрелка вниз для скачивания или стрелка наружу, когда обновление открывается на странице релиза. */
-function renderApplicationUpdateIcon(isManualDownload: boolean): string {
-  const iconPath = isManualDownload
-    ? '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />'
-    : '<path d="M12 4v11M7 10l5 5 5-5M5 20h14" />';
+const REFRESH_ICON_PATH =
+  '<path d="M20 11a8 8 0 0 0-14.3-4.5L4 8.5M4 4v4.5h4.5M4 13a8 8 0 0 0 14.3 4.5l1.7-2M20 20v-4.5h-4.5" />';
+const IDLE_APPLICATION_UPDATE_STAGES: ReadonlySet<ApplicationUpdateStage> = new Set([
+  'idle',
+  'checking',
+  'up-to-date',
+  'check-error'
+]);
+
+/** Круговая стрелка для проверки, стрелка вниз для скачивания или стрелка наружу, когда обновление открывается на странице релиза. */
+function renderApplicationUpdateIcon(
+  stage: ApplicationUpdateStage,
+  isManualDownload: boolean
+): string {
+  let iconPath = '<path d="M12 4v11M7 10l5 5 5-5M5 20h14" />';
+  if (IDLE_APPLICATION_UPDATE_STAGES.has(stage)) {
+    iconPath = REFRESH_ICON_PATH;
+  } else if (isManualDownload) {
+    iconPath =
+      '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />';
+  }
 
   return `<svg class="application-update-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${iconPath}</svg>`;
 }
@@ -2560,20 +2631,20 @@ function renderApplicationUpdateRing(percent: number): string {
   `;
 }
 
-const APPLICATION_UPDATE_INDICATOR_MARKS: Partial<
-  Record<ApplicationUpdateState['status'], string>
-> = {
+const APPLICATION_UPDATE_INDICATOR_MARKS: Partial<Record<ApplicationUpdateStage, string>> = {
   downloaded: '<path d="M7.5 12.2l3 3 6-6.4" />',
-  error: '<path d="M12 8v5M12 16.3v.2" />'
+  'up-to-date': '<path d="M7.5 12.2l3 3 6-6.4" />',
+  error: '<path d="M12 8v5M12 16.3v.2" />',
+  'check-error': '<path d="M12 8v5M12 16.3v.2" />'
 };
 
-/** Маленький знак этапа: точка для доступного обновления, галочка или восклицательный знак. */
-function renderApplicationUpdateIndicator(status: ApplicationUpdateState['status']): string {
-  if (status === 'downloading') {
+/** Маленький знак этапа: точка для доступного обновления, галочка или восклицательный знак; без знака, пока нечего сообщить. */
+function renderApplicationUpdateIndicator(stage: ApplicationUpdateStage): string {
+  if (stage === 'downloading' || stage === 'idle' || stage === 'checking') {
     return '';
   }
 
-  const mark = APPLICATION_UPDATE_INDICATOR_MARKS[status];
+  const mark = APPLICATION_UPDATE_INDICATOR_MARKS[stage];
   return `<span class="application-update-indicator" aria-hidden="true">${mark ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" focusable="false">${mark}</svg>` : ''}</span>`;
 }
 
@@ -3299,9 +3370,10 @@ function bindEvents(): void {
   }
 }
 
-/** Выполняет действие текущего этапа: скачивание (или повтор после ошибки), открытие релиза или установку. */
+/** Выполняет действие текущего этапа: проверку, скачивание (или повтор после ошибки), открытие релиза или установку. */
 async function handleApplicationUpdateAction(): Promise<void> {
-  if (!applicationUpdate) {
+  if (!applicationUpdate || applicationUpdate.status === 'idle') {
+    await checkApplicationUpdate();
     return;
   }
 
@@ -3365,11 +3437,13 @@ async function installApplicationUpdate(): Promise<void> {
  */
 async function checkApplicationUpdate(): Promise<void> {
   isApplicationUpdateCheckInProgress = true;
+  isApplicationUpdateUpToDate = false;
   applicationUpdateCheckError = null;
   render();
 
   try {
     await window.ytdlp.checkApplicationUpdate();
+    isApplicationUpdateUpToDate = true;
   } catch (error) {
     applicationUpdateCheckError =
       error instanceof Error ? error.message : 'Не удалось проверить обновление.';

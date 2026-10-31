@@ -102,12 +102,38 @@ button {
   color: #2f80ed;
 }
 
-.application-update .application-update-button[data-update-stage='downloaded'] {
+.application-update .application-update-button[data-update-stage='downloaded'],
+.application-update .application-update-button[data-update-stage='up-to-date'] {
   color: #1f7a4d;
 }
 
-.application-update .application-update-button[data-update-stage='error'] {
+.application-update .application-update-button[data-update-stage='error'],
+.application-update .application-update-button[data-update-stage='check-error'] {
   color: #b42318;
+}
+
+.application-update .application-update-button[data-update-stage='checking'] {
+  color: #2f80ed;
+}
+
+.application-update
+  .application-update-button[data-update-stage='checking']
+  .application-update-icon {
+  animation: application-update-spin 1s linear infinite;
+}
+
+@keyframes application-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .application-update
+    .application-update-button[data-update-stage='checking']
+    .application-update-icon {
+    animation: none;
+  }
 }
 
 .application-update .application-update-button:disabled {
@@ -1986,11 +2012,17 @@ label.settings-option {
   color: #60a5fa;
 }
 
-[data-theme='dark'] .application-update-button[data-update-stage='downloaded'] {
+[data-theme='dark'] .application-update-button[data-update-stage='checking'] {
+  color: #60a5fa;
+}
+
+[data-theme='dark'] .application-update-button[data-update-stage='downloaded'],
+[data-theme='dark'] .application-update-button[data-update-stage='up-to-date'] {
   color: #4ade80;
 }
 
-[data-theme='dark'] .application-update-button[data-update-stage='error'] {
+[data-theme='dark'] .application-update-button[data-update-stage='error'],
+[data-theme='dark'] .application-update-button[data-update-stage='check-error'] {
   color: #fca5a5;
 }
 

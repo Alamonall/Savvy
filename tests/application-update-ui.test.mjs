@@ -27,6 +27,10 @@ test('иконка обновления в topbar заменяет тексто�
   assert.match(iconSource, /class="application-update-indicator"/);
   assert.match(iconSource, /stroke-dashoffset="\$\{/);
   assert.match(iconSource, /status === 'idle'/);
+  assert.doesNotMatch(
+    iconSource,
+    /if \(!applicationUpdate \|\| applicationUpdate\.status === 'idle'\) \{\s*return '';/
+  );
   assert.doesNotMatch(iconSource, />\$\{escapeHtml\(label\)\}</);
   assert.match(
     renderer,
@@ -44,9 +48,29 @@ test('aria-label иконки описывает этап и действие, �
   assert.match(iconSource, /'Открыть релиз'/);
   assert.match(
     iconSource,
-    /aria-label="\$\{escapeHtml\(getApplicationUpdateActionLabel\(update\)\)\}"/
+    /aria-label="\$\{escapeHtml\(getApplicationUpdateActionLabel\(stage, update\)\)\}"/
   );
-  assert.match(iconSource, /\$\{isDownloading \? 'disabled' : ''\}/);
+  assert.match(iconSource, /\$\{isDisabled \? 'disabled' : ''\}/);
+});
+
+test('иконка видна без найденного обновления и запускает проверку', () => {
+  const iconSource = topbarIconSource();
+  const handlerSource = sourceBetween(
+    'async function handleApplicationUpdateAction',
+    'function getPendingQueueTaskCounts'
+  );
+
+  assert.match(iconSource, /'Проверить обновления'/);
+  assert.match(iconSource, /'Проверка обновлений…'/);
+  assert.match(iconSource, /'Установлена последняя версия'/);
+  assert.match(iconSource, /'Повторить проверку обновлений'/);
+  assert.match(iconSource, /'checking'/);
+  assert.match(iconSource, /'up-to-date'/);
+  assert.match(iconSource, /'check-error'/);
+  assert.match(
+    handlerSource,
+    /!applicationUpdate \|\| applicationUpdate\.status === 'idle'\) \{\s*await checkApplicationUpdate\(\)/
+  );
 });
 
 test('tooltip обновления показывает версии, первые 5 пунктов и без кнопок', () => {
@@ -153,6 +177,10 @@ test('стили индикатора обновления описывают в
   assert.match(styles, /\[data-update-stage='downloading'\]/);
   assert.match(styles, /\[data-update-stage='downloaded'\]/);
   assert.match(styles, /\[data-update-stage='error'\]/);
+  assert.match(styles, /\[data-update-stage='checking'\]/);
+  assert.match(styles, /\[data-update-stage='up-to-date'\]/);
+  assert.match(styles, /\[data-update-stage='check-error'\]/);
+  assert.match(styles, /prefers-reduced-motion/);
   assert.match(styles, /\.application-update-button:disabled/);
   assert.match(styles, /\.application-update-button:focus-visible/);
   assert.match(styles, /\[data-theme='dark'\] \.application-update-button/);
