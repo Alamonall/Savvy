@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { URL } from 'node:url';
+import { filterVisibleTasks, isActiveTask } from '../src/shared/task-activity.ts';
 
 const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
@@ -13,6 +14,39 @@ function functionSource(name) {
   return renderer.slice(start, end === -1 ? undefined : end);
 }
 
+const STATUSES = ['queued', 'running', 'done', 'failed', 'cancelled'];
+const tasks = STATUSES.map((status) => ({ id: status, status }));
+
+test('активными считаются только выполняющиеся и ожидающие задачи', () => {
+  assert.deepEqual(
+    STATUSES.filter((status) => isActiveTask({ status })),
+    ['queued', 'running']
+  );
+});
+
+test('при включённом скрытии остаются только активные задачи в исходном порядке', () => {
+  assert.deepEqual(
+    filterVisibleTasks(tasks, true).map((task) => task.id),
+    ['queued', 'running']
+  );
+});
+
+test('при выключенном скрытии показываются все задачи, включая отменённые', () => {
+  assert.deepEqual(filterVisibleTasks(tasks, false), tasks);
+});
+
+test('фильтр без активных задач возвращает пустой список', () => {
+  assert.deepEqual(filterVisibleTasks(tasks.slice(2), true), []);
+});
+
+test('список и миникарта берут задачи через общий фильтр', () => {
+  assert.match(functionSource('getVisibleQueue'), /filterVisibleTasks\(queue, hideInactive\)/);
+  assert.match(
+    functionSource('renderTaskListMarkup'),
+    /filterVisibleTasks\(group\.tasks, hideInactive\)/
+  );
+});
+
 test('refreshQueueView заново вешает обработчик флажка «Скрыть неактивные»', () => {
   // Флажок рендерится внутри #task-list, который refreshQueueView пересоздаёт при каждом обновлении очереди.
   assert.match(functionSource('refreshQueueView'), /bindHideInactiveToggle\(\)/);
@@ -22,14 +56,9 @@ test('статические события очереди используют 
   assert.match(functionSource('bindQueueStaticEvents'), /bindHideInactiveToggle\(\)/);
 });
 
-test('оба фильтра списка и миникарты используют один предикат активных задач', () => {
-  assert.match(functionSource('getVisibleQueue'), /queue\.filter\(isActiveTask\)/);
-  assert.match(functionSource('renderTaskListMarkup'), /group\.tasks\.filter\(isActiveTask\)/);
-});
-
-test('активными считаются только выполняющиеся и ожидающие задачи', () => {
-  const body = functionSource('isActiveTask');
-  assert.match(body, /'running'/);
-  assert.match(body, /'queued'/);
-  assert.doesNotMatch(body, /'done'|'failed'|'cancelled'/);
+test('отмена задачи не выбирает её, когда неактивные скрыты', () => {
+  assert.match(
+    functionSource('cancelDownload'),
+    /if \(!hideInactive\) \{\s*selectedTaskId = task\.id;\s*\}/
+  );
 });

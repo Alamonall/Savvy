@@ -16,6 +16,7 @@ import {
   parseBrowserCookies,
   type BrowserCookiesSpec
 } from '../../shared/browser-cookies';
+import { filterVisibleTasks } from '../../shared/task-activity';
 import './styles.css';
 
 type Tab = 'queue' | 'settings';
@@ -1273,12 +1274,7 @@ function applyPendingQueue(): void {
 }
 
 function getVisibleQueue(): DownloadTask[] {
-  return hideInactive ? queue.filter(isActiveTask) : queue;
-}
-
-/** Активная задача выполняется или ждёт запуска; остальные считаются неактивными. */
-function isActiveTask(task: DownloadTask): boolean {
-  return task.status === 'running' || task.status === 'queued';
+  return filterVisibleTasks(queue, hideInactive);
 }
 
 function formatQueueCount(tasks: DownloadTask[]): string {
@@ -2277,7 +2273,7 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
   return groupQueueByDay(tasks)
     .map((group) => {
       const isCollapsed = collapsedDays[group.dayKey] === true;
-      const visibleGroupTasks = hideInactive ? group.tasks.filter(isActiveTask) : group.tasks;
+      const visibleGroupTasks = filterVisibleTasks(group.tasks, hideInactive);
 
       return `
         <section class="task-day-group">
@@ -3897,7 +3893,10 @@ function openHttp403UpdateRecommendation(): void {
 async function cancelDownload(taskId: string): Promise<void> {
   try {
     const task = await window.ytdlp.cancelDownload(taskId);
-    selectedTaskId = task.id;
+    // Отменённая задача неактивна: при включённом скрытии она исчезает из списка, выбирать её не нужно.
+    if (!hideInactive) {
+      selectedTaskId = task.id;
+    }
     currentTab = 'queue';
     render();
   } catch (error) {
