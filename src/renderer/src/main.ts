@@ -2441,6 +2441,7 @@ function refreshQueueView(): void {
 
   bindQueueTaskEvents();
   bindQueueGroupEvents();
+  bindHideCompletedToggle();
 }
 
 function refreshViewAfterQueueUpdate(): void {
@@ -3229,7 +3230,8 @@ function bindQueueGroupEvents(): void {
   });
 }
 
-function bindQueueStaticEvents(): void {
+/** Флажок находится внутри `#task-list`, поэтому обработчик нужно вешать после каждой перерисовки списка. */
+function bindHideCompletedToggle(): void {
   document
     .querySelectorAll<HTMLInputElement>('[data-hide-completed-toggle]')
     .forEach((checkbox) => {
@@ -3239,6 +3241,10 @@ function bindQueueStaticEvents(): void {
         render();
       });
     });
+}
+
+function bindQueueStaticEvents(): void {
+  bindHideCompletedToggle();
 
   document.querySelector<HTMLFormElement>('#add-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
