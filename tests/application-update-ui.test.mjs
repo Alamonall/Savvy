@@ -189,6 +189,16 @@ test('browser preview API содержит checkApplicationUpdate и не исп
   assert.doesNotMatch(renderer, /releaseNotes/);
 });
 
+test('без найденного обновления знак не рисуется и цвет кнопки не зелёный', () => {
+  const indicatorSource = sourceBetween(
+    'function renderApplicationUpdateIndicator',
+    '/** Список пунктов релиза'
+  );
+
+  assert.match(indicatorSource, /stage === 'up-to-date'/);
+  assert.doesNotMatch(styles, /up-to-date/);
+});
+
 test('стили индикатора обновления описывают все этапы в светлой и тёмной теме', () => {
   assert.match(styles, /\.application-update-button/);
   assert.match(styles, /\.application-update-indicator/);
@@ -198,7 +208,6 @@ test('стили индикатора обновления описывают в
   assert.match(styles, /\[data-update-stage='downloaded'\]/);
   assert.match(styles, /\[data-update-stage='error'\]/);
   assert.match(styles, /\[data-update-stage='checking'\]/);
-  assert.match(styles, /\[data-update-stage='up-to-date'\]/);
   assert.match(styles, /\[data-update-stage='check-error'\]/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.match(styles, /\.application-update-button:disabled/);

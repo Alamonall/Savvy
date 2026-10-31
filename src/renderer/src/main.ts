@@ -2632,14 +2632,18 @@ function renderApplicationUpdateRing(percent: number): string {
 
 const APPLICATION_UPDATE_INDICATOR_MARKS: Partial<Record<ApplicationUpdateStage, string>> = {
   downloaded: '<path d="M7.5 12.2l3 3 6-6.4" />',
-  'up-to-date': '<path d="M7.5 12.2l3 3 6-6.4" />',
   error: '<path d="M12 8v5M12 16.3v.2" />',
   'check-error': '<path d="M12 8v5M12 16.3v.2" />'
 };
 
-/** Маленький знак этапа: точка для доступного обновления, галочка или восклицательный знак; без знака, пока нечего сообщить. */
+/** Маленький знак этапа: точка для доступного обновления, галочка или восклицательный знак; без знака, пока нечего сообщить или обновлений нет. */
 function renderApplicationUpdateIndicator(stage: ApplicationUpdateStage): string {
-  if (stage === 'downloading' || stage === 'idle' || stage === 'checking') {
+  if (
+    stage === 'downloading' ||
+    stage === 'idle' ||
+    stage === 'checking' ||
+    stage === 'up-to-date'
+  ) {
     return '';
   }
 
