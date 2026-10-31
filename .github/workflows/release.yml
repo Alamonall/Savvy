@@ -1,9 +1,9 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - master
+  schedule:
+    # Раз в неделю, по понедельникам в 06:00 UTC (09:00 по Москве). Cron в GitHub Actions задаётся в UTC.
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -48,16 +48,17 @@ jobs:
           RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'alpha' }}
         run: |
           set -euo pipefail
-          # Последняя стабильная версия задаёт основу следующего alpha-цикла.
-          # stable_tag=git tag --list 'v[0-9]+.[0-9]+.[0-9]+'
-          stable_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+          # Версия строится от последнего релиза по дате создания тега. Сортировка по номеру
+          # здесь не годится: старые теги v1.x от другой линии дают номер выше текущего 0.0.x.
+          last_tag="$(git tag --list 'v*' --sort=-creatordate | head -n 1 || true)"
+          last_version="${last_tag#v}"
           if [ "$RELEASE_CHANNEL" = "stable" ]; then
-            latest_alpha_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*-alpha.[0-9]*' | sort -V | tail -n 1 || true)"
+            latest_alpha_tag="$(git tag --list 'v*-alpha.*' --sort=-creatordate | head -n 1 || true)"
             if [ -n "$latest_alpha_tag" ]; then
               stable_version="${latest_alpha_tag#v}"
               stable_version="${stable_version%-alpha.*}"
-            elif [ -n "$stable_tag" ]; then
-              stable_version="${stable_tag#v}"
+            elif [ -n "$last_tag" ]; then
+              stable_version="$last_version"
             else
               stable_version="${INITIAL_RELEASE_VERSION%-alpha.*}"
             fi
@@ -66,9 +67,20 @@ jobs:
             exit 0
           fi
 
-          if [ -n "$stable_tag" ]; then
-            stable_version="${stable_tag#v}"
-            base_version="$(node --input-type=module -e "const [major, minor, patch] = process.argv[1].split('.').map(Number); console.log([major, minor, patch + 1].join('.'))" "$stable_version")"
+          # Плановый alpha-релиз выходит только если дерево изменилось после последнего релиза.
+          if [ -n "$last_tag" ] && git diff --quiet "$last_tag" HEAD; then
+            echo "Изменений после $last_tag нет, релиз не выходит."
+            echo "should-release=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$last_version" == *-alpha.* ]]; then
+            # Идёт alpha-цикл: основа та же, меняется только номер alpha.
+            base_version="${last_version%-alpha.*}"
+          elif [ -n "$last_tag" ]; then
+            # Последний релиз стабильный: следующий alpha-цикл начинается с патча + 1.
+            base_version="$(node --input-type=module -e "const [major, minor, patch] = process.argv[1].split('.').map(Number); console.log([major, minor, patch + 1].join('.'))" "$last_version")"
           else
             base_version="${INITIAL_RELEASE_VERSION%-alpha.*}"
           fi
