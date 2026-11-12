@@ -1,14 +1,26 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { basename, extname, join } from 'node:path';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import {
+  extractHtmlTitle,
+  extractTitleFromLogLines,
+  getTwitterOembedUrl,
+  getYoutubeOembedUrl,
+  isUnresolvedTaskTitle,
+  parseOembedTitle,
+  parseTitleFromLogLine,
+  SAVVY_TITLE_PREFIX
+} from '../../shared/task-title';
 import type { AddDownloadPayload, DownloadTask, DownloadUpdate } from '../../shared/types';
 import { BinaryLocatorService } from './binary-locator.service';
 import { SettingsService } from './settings.service';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron') as typeof import('electron');
+const execFileAsync = promisify(execFile);
 
 type QueueUpdateSender = (update: DownloadUpdate) => void;
 type FailureDetails = {
@@ -19,13 +31,22 @@ const YOUTUBE_JS_RUNTIME_MESSAGE =
   'YouTube не отдал видеоформаты: yt-dlp не смог решить n challenge. Добавь в дополнительные аргументы "--js-runtimes deno" или обнови yt-dlp/JS runtime.';
 const X_TIMEOUT_MESSAGE =
   'Не удалось подключиться к x.com: соединение истекло по таймауту. Для Twitter/X проверь доступ к сайту из этой сети, укажи Proxy/VPN в настройках сети, при необходимости увеличь "Таймаут сокета" и используй cookies из браузера.';
+const MAX_CONCURRENT_TITLE_LOOKUPS = 3;
+const METADATA_FETCH_TIMEOUT_MS = 5_000;
+const YTDLP_METADATA_TIMEOUT_MS = 15_000;
 
 @Injectable()
-export class DownloadsService {
+export class DownloadsService implements OnModuleDestroy {
   private queue: DownloadTask[] = [];
   private readonly activeTaskIds = new Set<string>();
   private readonly activeChildren = new Map<string, ChildProcess>();
+  private readonly partialLogBuffers = new Map<string, string>();
   private readonly pendingUpdateTaskIds = new Set<string>();
+  private readonly titleCache = new Map<string, string>();
+  private readonly attemptedTitleUrls = new Set<string>();
+  private readonly titleLookupQueue: string[] = [];
+  private activeTitleLookups = 0;
+  private isDestroyed = false;
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
   private sender: QueueUpdateSender | null = null;
 
@@ -33,6 +54,15 @@ export class DownloadsService {
     @Inject(BinaryLocatorService) private readonly binaryLocatorService: BinaryLocatorService,
     @Inject(SettingsService) private readonly settingsService: SettingsService
   ) {}
+
+  onModuleDestroy(): void {
+    this.isDestroyed = true;
+    this.titleLookupQueue.length = 0;
+    if (this.updateTimer) {
+      clearTimeout(this.updateTimer);
+      this.updateTimer = null;
+    }
+  }
 
   setUpdateSender(sender: QueueUpdateSender): void {
     this.sender = sender;
@@ -46,19 +76,57 @@ export class DownloadsService {
 
     try {
       const parsedHistory = JSON.parse(readFileSync(historyPath, 'utf8')) as DownloadTask[];
+      let hasTitleRecovery = false;
+
       this.queue = parsedHistory.map((task) => {
-        if (task.status !== 'running') {
-          return task;
+        const nextTask: DownloadTask =
+          task.status === 'running'
+            ? {
+                ...task,
+                status: 'failed',
+                finishedAt: task.finishedAt ?? Date.now(),
+                log: [...task.log, 'Скачивание было прервано при закрытии приложения.']
+              }
+            : { ...task };
+
+        if (isUnresolvedTaskTitle(nextTask)) {
+          const logTitle = extractTitleFromLogLines(nextTask.log);
+          if (logTitle) {
+            nextTask.title = logTitle;
+            hasTitleRecovery = true;
+          }
         }
 
-        return {
-          ...task,
-          status: 'failed',
-          finishedAt: task.finishedAt ?? Date.now(),
-          log: [...task.log, 'Скачивание было прервано при закрытии приложения.']
-        };
+        if (!isUnresolvedTaskTitle(nextTask) && nextTask.title) {
+          this.titleCache.set(nextTask.url, nextTask.title);
+        }
+
+        return nextTask;
       });
-      this.persistHistory();
+
+      for (const task of this.queue) {
+        if (isUnresolvedTaskTitle(task)) {
+          const cachedTitle = this.titleCache.get(task.url);
+          if (cachedTitle) {
+            task.title = cachedTitle;
+            hasTitleRecovery = true;
+          }
+        }
+      }
+
+      if (
+        hasTitleRecovery ||
+        this.queue.some((task, index) => task.status !== parsedHistory[index]?.status)
+      ) {
+        this.persistHistory();
+      }
+
+      const unresolvedTasks = [...this.queue]
+        .filter((task) => isUnresolvedTaskTitle(task))
+        .sort((left, right) => right.createdAt - left.createdAt);
+      for (const task of unresolvedTasks) {
+        this.enqueueTitleResolution(task.url);
+      }
     } catch (error) {
       console.error(
         `[history:error] Не удалось прочитать историю: ${
@@ -98,7 +166,7 @@ export class DownloadsService {
     const task: DownloadTask = {
       id: taskId,
       url,
-      title: url,
+      title: this.titleCache.get(url) ?? url,
       ...taskConfiguration,
       downloadDir: payload.downloadDir.trim() || this.settingsService.get().downloadDir,
       status: 'queued',
@@ -109,6 +177,9 @@ export class DownloadsService {
 
     this.queue.unshift(task);
     this.emitQueueUpdate(task);
+    if (isUnresolvedTaskTitle(task)) {
+      this.enqueueTitleResolution(url, true);
+    }
     this.startNext();
 
     return this.cloneTask(task);
@@ -137,8 +208,21 @@ export class DownloadsService {
       log: ['Добавлено в очередь повторно с актуальными настройками.']
     };
 
+    const knownTitle =
+      (!isUnresolvedTaskTitle(originalTask) ? originalTask.title : undefined) ??
+      this.titleCache.get(originalTask.url);
+    if (knownTitle) {
+      task.title = knownTitle;
+      this.titleCache.set(originalTask.url, knownTitle);
+    } else {
+      this.attemptedTitleUrls.delete(originalTask.url);
+    }
+
     this.queue.push(task);
     this.emitQueueUpdate(task);
+    if (isUnresolvedTaskTitle(task)) {
+      this.enqueueTitleResolution(task.url, true);
+    }
     this.startNext();
 
     return this.cloneTask(task);
@@ -230,7 +314,8 @@ export class DownloadsService {
       task.log.push(`Конфигурация yt-dlp:\n${task.effectiveConfigText}`);
       this.emitQueueUpdate(task);
 
-      const args = [...this.settingsService.parseOptions(task.optionsText), task.url];
+      const baseArgs = this.settingsService.parseOptions(task.optionsText);
+      const args = [...baseArgs, ...this.buildTitlePrintArgs(baseArgs), task.url];
       const child = spawn(ytdlpPath, args, {
         cwd: task.downloadDir,
         shell: false
@@ -241,6 +326,7 @@ export class DownloadsService {
       child.stderr.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
 
       child.on('error', (error) => {
+        this.flushPartialLogBuffer(task);
         if (task.status === 'cancelled') {
           this.finishCancelledTask(task);
           return;
@@ -258,6 +344,7 @@ export class DownloadsService {
       });
 
       child.on('close', (code) => {
+        this.flushPartialLogBuffer(task);
         if (task.status === 'cancelled') {
           this.finishCancelledTask(task);
           return;
@@ -282,6 +369,9 @@ export class DownloadsService {
         this.activeTaskIds.delete(task.id);
         this.activeChildren.delete(task.id);
         this.emitQueueUpdate(task);
+        if (isUnresolvedTaskTitle(task)) {
+          this.enqueueTitleResolution(task.url);
+        }
         this.startNext();
       });
     }
@@ -289,6 +379,7 @@ export class DownloadsService {
 
   /** Освобождает слот очереди после завершения отменённого процесса. */
   private finishCancelledTask(task: DownloadTask): void {
+    this.partialLogBuffers.delete(task.id);
     if (!this.activeTaskIds.delete(task.id)) {
       return;
     }
@@ -347,19 +438,19 @@ export class DownloadsService {
     return Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : null;
   }
 
-  private parseTitleFromLogLine(line: string): string | null {
-    const match = line.match(
-      /\[(?:download|ExtractAudio|Merger|MoveFiles)]\s+Destination:\s+(.+)$/
+  private buildTitlePrintArgs(args: string[]): string[] {
+    const hasSimulationOption = args.some((arg) =>
+      ['-s', '--simulate', '-j', '--dump-json', '-J', '--dump-single-json'].includes(arg)
     );
-    if (!match) {
-      return null;
+    if (hasSimulationOption) {
+      return [];
     }
 
-    const filename = basename(match[1].trim());
-    const extension = extname(filename);
-    const title = extension ? filename.slice(0, -extension.length) : filename;
-
-    return title || null;
+    return [
+      '--no-simulate',
+      '--print',
+      `pre_process:${SAVVY_TITLE_PREFIX}%(playlist_title,title)s`
+    ];
   }
 
   private analyzeFailure(task: DownloadTask): FailureDetails {
@@ -394,11 +485,30 @@ export class DownloadsService {
   }
 
   private pushLog(task: DownloadTask, chunk: Buffer): void {
-    const text = chunk.toString('utf8');
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trimEnd())
-      .filter(Boolean);
+    const buffered = (this.partialLogBuffers.get(task.id) ?? '') + chunk.toString('utf8');
+    const parts = buffered.split(/\r?\n|\r/);
+    const remainder = parts.pop() ?? '';
+    this.partialLogBuffers.set(task.id, remainder);
+
+    const lines = parts.map((line) => line.trimEnd()).filter(Boolean);
+    if (!lines.length) {
+      return;
+    }
+
+    this.processLogLines(task, lines);
+  }
+
+  private flushPartialLogBuffer(task: DownloadTask): void {
+    const remainder = this.partialLogBuffers.get(task.id)?.trimEnd();
+    this.partialLogBuffers.delete(task.id);
+    if (remainder) {
+      this.processLogLines(task, [remainder]);
+    }
+  }
+
+  private processLogLines(task: DownloadTask, lines: string[]): void {
+    const visibleLines: string[] = [];
+    let titleUpdated = false;
 
     for (const line of lines) {
       const progress = this.parseDownloadProgress(line);
@@ -406,9 +516,15 @@ export class DownloadsService {
         task.progress = progress;
       }
 
-      const title = this.parseTitleFromLogLine(line);
+      const title = parseTitleFromLogLine(line);
       if (title && task.title === task.url) {
         task.title = title;
+        this.applyResolvedTitle(task.url, title, false);
+        titleUpdated = true;
+      }
+
+      if (line.trim().startsWith(SAVVY_TITLE_PREFIX)) {
+        continue;
       }
 
       if (/HTTP Error 403:\s*Forbidden/i.test(line)) {
@@ -426,11 +542,219 @@ export class DownloadsService {
       if (this.isXConnectionTimeout(line)) {
         task.userMessage = X_TIMEOUT_MESSAGE;
       }
+
+      visibleLines.push(line);
     }
 
-    task.log.push(...lines);
-    task.log = task.log.slice(-300);
-    this.scheduleQueueUpdate(task);
+    if (visibleLines.length) {
+      task.log.push(...visibleLines);
+      task.log = task.log.slice(-300);
+    }
+
+    if (visibleLines.length || titleUpdated) {
+      this.scheduleQueueUpdate(task);
+    }
+  }
+
+  /** Добавляет URL в фоновую очередь определения названия видео. */
+  private enqueueTitleResolution(url: string, prioritize = false): void {
+    if (this.isDestroyed || this.titleCache.has(url) || this.attemptedTitleUrls.has(url)) {
+      return;
+    }
+
+    this.attemptedTitleUrls.add(url);
+    if (prioritize) {
+      this.titleLookupQueue.unshift(url);
+    } else {
+      this.titleLookupQueue.push(url);
+    }
+    this.drainTitleLookupQueue();
+  }
+
+  private drainTitleLookupQueue(): void {
+    while (
+      !this.isDestroyed &&
+      this.activeTitleLookups < MAX_CONCURRENT_TITLE_LOOKUPS &&
+      this.titleLookupQueue.length > 0
+    ) {
+      const url = this.titleLookupQueue.shift();
+      if (!url) {
+        continue;
+      }
+
+      this.activeTitleLookups += 1;
+      void this.resolveTitleInBackground(url).finally(() => {
+        this.activeTitleLookups -= 1;
+        this.drainTitleLookupQueue();
+      });
+    }
+  }
+
+  private async resolveTitleInBackground(url: string): Promise<void> {
+    if (this.isDestroyed || this.titleCache.has(url)) {
+      return;
+    }
+
+    const matchingTask = this.queue.find((item) => item.url === url);
+    if (!matchingTask) {
+      return;
+    }
+
+    const resolvedTitle =
+      (await this.fetchOembedTitle(getYoutubeOembedUrl(url))) ??
+      (this.isUrlCurrentlyRunning(url)
+        ? null
+        : await this.fetchYtdlpMetadataTitle(url, matchingTask.optionsText)) ??
+      (await this.fetchOembedTitle(getTwitterOembedUrl(url))) ??
+      (await this.fetchHtmlMetadataTitle(url));
+
+    if (!this.isDestroyed && resolvedTitle) {
+      this.applyResolvedTitle(url, resolvedTitle, true);
+    }
+  }
+
+  private isUrlCurrentlyRunning(url: string): boolean {
+    return this.queue.some((item) => item.url === url && this.activeTaskIds.has(item.id));
+  }
+
+  private applyResolvedTitle(url: string, title: string, emitUpdate: boolean): void {
+    this.titleCache.set(url, title);
+
+    let firstUpdatedTask: DownloadTask | null = null;
+    for (const item of this.queue) {
+      if (item.url === url && isUnresolvedTaskTitle(item)) {
+        item.title = title;
+        firstUpdatedTask ??= item;
+      }
+    }
+
+    if (emitUpdate && firstUpdatedTask) {
+      this.emitQueueUpdate(firstUpdatedTask);
+    }
+  }
+
+  private async fetchOembedTitle(oembedUrl: string | null): Promise<string | null> {
+    if (!oembedUrl) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(oembedUrl, {
+        signal: AbortSignal.timeout(METADATA_FETCH_TIMEOUT_MS)
+      });
+      if (!response.ok) {
+        return null;
+      }
+
+      const data: unknown = await response.json();
+      return parseOembedTitle(data);
+    } catch {
+      return null;
+    }
+  }
+
+  private async fetchYtdlpMetadataTitle(
+    url: string,
+    taskOptionsText: string
+  ): Promise<string | null> {
+    const ytdlpPath = this.binaryLocatorService.getYtdlpPath(this.settingsService.get().ytdlpPath);
+    if (!ytdlpPath) {
+      return null;
+    }
+
+    const baseArgs = this.buildSafeMetadataBaseArgs(taskOptionsText);
+    const args = [
+      ...baseArgs,
+      '--skip-download',
+      '--no-warnings',
+      '--ignore-no-formats-error',
+      '--no-download-archive',
+      '--no-write-info-json',
+      '--no-write-thumbnail',
+      '--no-write-subs',
+      '--no-write-auto-subs',
+      '--no-write-description',
+      '--no-write-comments',
+      '--flat-playlist',
+      '--playlist-items',
+      '1',
+      '--print',
+      '%(playlist_title,title)s',
+      url
+    ];
+
+    try {
+      const { stdout } = await execFileAsync(ytdlpPath, args, {
+        timeout: YTDLP_METADATA_TIMEOUT_MS
+      });
+      const firstLine = stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0 && line !== 'NA');
+      return firstLine ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildSafeMetadataBaseArgs(taskOptionsText: string): string[] {
+    const parsedArgs = this.settingsService.parseOptions(taskOptionsText);
+    const safeArgs: string[] = [];
+
+    for (let index = 0; index < parsedArgs.length; index += 1) {
+      const arg = parsedArgs[index];
+      if (arg === '--config-locations') {
+        const configPath = parsedArgs[index + 1];
+        if (configPath && existsSync(configPath)) {
+          safeArgs.push(arg, configPath);
+        }
+        index += 1;
+        continue;
+      }
+
+      if (arg.startsWith('--config-locations=')) {
+        const configPath = arg.slice('--config-locations='.length);
+        if (configPath && existsSync(configPath)) {
+          safeArgs.push(arg);
+        }
+        continue;
+      }
+
+      safeArgs.push(arg);
+    }
+
+    return safeArgs;
+  }
+
+  private async fetchHtmlMetadataTitle(url: string): Promise<string | null> {
+    try {
+      const parsedUrl = new URL(url);
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return null;
+      }
+
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(METADATA_FETCH_TIMEOUT_MS),
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept-Language': 'ru,en;q=0.9'
+        }
+      });
+      if (!response.ok) {
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.toLowerCase().includes('text/html')) {
+        return null;
+      }
+
+      const html = (await response.text()).slice(0, 128 * 1024);
+      return extractHtmlTitle(html);
+    } catch {
+      return null;
+    }
   }
 
   private isXConnectionTimeout(text: string): boolean {

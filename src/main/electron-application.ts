@@ -44,10 +44,17 @@ export class ElectronApplication {
 
     this.services.settings.init();
     this.services.downloads.loadHistory();
+    const notifiedDoneTaskIds = new Set(
+      this.services.downloads
+        .list()
+        .filter((task) => task.status === 'done')
+        .map((task) => task.id)
+    );
     this.services.downloads.setUpdateSender((update) => {
       this.mainWindow?.webContents.send('downloads:update', update);
 
-      if (update.task.status === 'done') {
+      if (update.task.status === 'done' && !notifiedDoneTaskIds.has(update.task.id)) {
+        notifiedDoneTaskIds.add(update.task.id);
         this.showDownloadDoneNotification(update.task.title || update.task.url);
       }
     });

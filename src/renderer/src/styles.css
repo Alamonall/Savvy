@@ -1265,6 +1265,28 @@ label.settings-option {
   font-size: 12px;
 }
 
+.queue-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px 16px;
+}
+
+.queue-search input {
+  height: 36px;
+}
+
+.queue-search-clear[hidden] {
+  display: none;
+}
+
+.queue-search-clear {
+  flex: 0 0 auto;
+  min-height: 36px;
+  font-size: 13px;
+}
+
 .inline-message {
   margin: 12px 16px 0;
   color: #b42318;
@@ -1892,6 +1914,7 @@ label.settings-option {
 
 [data-theme='dark'] .section-head,
 [data-theme='dark'] .queue-meta,
+[data-theme='dark'] .queue-search,
 [data-theme='dark'] .settings-option {
   border-color: #374151;
 }
