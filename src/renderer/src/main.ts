@@ -17,6 +17,8 @@ import {
   type BrowserCookiesSpec
 } from '../../shared/browser-cookies';
 import { filterVisibleTasks } from '../../shared/task-activity';
+import { filterTasksBySearch, normalizeSearchQuery } from '../../shared/task-search';
+import { getYoutubeOembedUrl, parseOembedTitle } from '../../shared/task-title';
 import './styles.css';
 
 type Tab = 'queue' | 'settings';
@@ -129,6 +131,7 @@ let expandedUrlGroups = readExpandedUrlGroups();
 let folderPicker: FolderPickerState | null = null;
 let theme: Theme = readTheme();
 let cookiesSource: CookiesSource = readCookiesSource();
+let queueSearchQuery = '';
 let settingsSearchQuery = '';
 let applicationUpdate: ApplicationUpdateState | null = null;
 let isApplicationUpdateCheckInProgress = false;
@@ -898,6 +901,29 @@ function installBrowserPreviewApi(): void {
     emitQueueUpdate(task);
   };
 
+  const resolvePreviewTaskTitle = async (taskId: string, url: string): Promise<void> => {
+    const oembedUrl = getYoutubeOembedUrl(url);
+    if (!oembedUrl) {
+      return;
+    }
+
+    try {
+      const response = await fetch(oembedUrl);
+      if (!response.ok) {
+        return;
+      }
+
+      const title = parseOembedTitle(await response.json());
+      const task = previewQueue.find((item) => item.id === taskId);
+      if (task && title && task.title === task.url) {
+        task.title = title;
+        emitQueueUpdate(task);
+      }
+    } catch {
+      return;
+    }
+  };
+
   window.ytdlp = {
     async addDownload(payload) {
       const now = Date.now();
@@ -922,6 +948,7 @@ function installBrowserPreviewApi(): void {
 
       previewQueue = [task, ...previewQueue];
       emitQueueUpdate(task);
+      void resolvePreviewTaskTitle(task.id, payload.url);
       window.setTimeout(() => finishPreviewTask(task.id), 900);
 
       return task;
@@ -1275,7 +1302,11 @@ function applyPendingQueue(): void {
 }
 
 function getVisibleQueue(): DownloadTask[] {
-  return filterVisibleTasks(queue, hideInactive);
+  return filterTasksBySearch(
+    filterVisibleTasks(queue, hideInactive),
+    queueSearchQuery,
+    formatStatus
+  );
 }
 
 function formatQueueCount(tasks: DownloadTask[]): string {
@@ -1716,6 +1747,14 @@ function renderSettingsOption(option: SettingsOption): string {
   `;
 }
 
+function isSettingsUtilitySectionMatching(query: string, keywords: string[]): boolean {
+  if (!query) {
+    return true;
+  }
+
+  return keywords.join(' ').toLocaleLowerCase().includes(query);
+}
+
 function renderSettingsUiPanel(): string {
   const query = settingsSearchQuery.trim().toLocaleLowerCase();
   const renderedGroups = SETTINGS_OPTION_GROUPS.map((group, index) => {
@@ -1740,16 +1779,35 @@ function renderSettingsUiPanel(): string {
     `;
   }).join('');
 
-  return `
-    <section class="settings-list">
-      ${renderSettingsSearch()}
-      <datalist id="path-suggestions">
-        <option value="${escapeHtml(settings.downloadDir)}"></option>
-        <option value="~/Downloads"></option>
-        <option value="~/Desktop"></option>
-        <option value="/tmp"></option>
-      </datalist>
-      ${renderedGroups || '<p class="settings-search-empty">Ничего не найдено.</p>'}
+  const showYtdlpBinarySection = isSettingsUtilitySectionMatching(query, [
+    'Бинарник yt-dlp',
+    'поиск и установка',
+    'найти yt-dlp',
+    'проверить последнюю версию',
+    'выбрать файл yt-dlp',
+    'обновить выбранный yt-dlp',
+    'установить stable',
+    'установить nightly',
+    settings.ytdlpPath,
+    ytdlpBinaryInfo.path || ''
+  ]);
+  const showApplicationUpdateSection = isSettingsUtilitySectionMatching(query, [
+    'Обновление приложения',
+    'версия приложения',
+    'новая версия',
+    'проверить сейчас',
+    'список изменений',
+    'github',
+    'скачать',
+    'установить и перезапустить'
+  ]);
+  const showClearHistoryButton = isSettingsUtilitySectionMatching(query, [
+    'Очистить историю',
+    'история'
+  ]);
+
+  const ytdlpBinarySectionMarkup = showYtdlpBinarySection
+    ? `
       <section class="panel settings-panel settings-list-panel">
         <div class="section-head">
           <h2>Бинарник yt-dlp</h2>
@@ -1782,8 +1840,31 @@ function renderSettingsUiPanel(): string {
         </div>
         ${renderYtdlpCandidates()}
       </section>
-      ${renderApplicationUpdateSettingsSection()}
-      <button class="danger" id="clear-history" type="button">Очистить историю</button>
+    `
+    : '';
+  const clearHistoryMarkup = showClearHistoryButton
+    ? '<button class="danger" id="clear-history" type="button">Очистить историю</button>'
+    : '';
+  const hasAnyMatches =
+    Boolean(renderedGroups) ||
+    showYtdlpBinarySection ||
+    showApplicationUpdateSection ||
+    showClearHistoryButton;
+
+  return `
+    <section class="settings-list">
+      ${renderSettingsSearch()}
+      <datalist id="path-suggestions">
+        <option value="${escapeHtml(settings.downloadDir)}"></option>
+        <option value="~/Downloads"></option>
+        <option value="~/Desktop"></option>
+        <option value="/tmp"></option>
+      </datalist>
+      ${renderedGroups}
+      ${ytdlpBinarySectionMarkup}
+      <div ${showApplicationUpdateSection ? '' : 'hidden'}>${renderApplicationUpdateSettingsSection()}</div>
+      ${clearHistoryMarkup}
+      ${hasAnyMatches ? '' : '<p class="settings-search-empty">Ничего не найдено.</p>'}
     </section>
   `;
 }
@@ -2207,10 +2288,11 @@ function renderUrlTaskGroupMarkup(
   dayKey: string,
   url: string,
   tasks: DownloadTask[],
-  selectedTask: DownloadTask | null
+  selectedTask: DownloadTask | null,
+  forceExpanded = false
 ): string {
   const groupKey = getUrlGroupKey(dayKey, url);
-  const isExpanded = expandedUrlGroups[groupKey] === true;
+  const isExpanded = forceExpanded || expandedUrlGroups[groupKey] === true;
   const status = getUrlGroupStatus(tasks);
   const title = getUrlGroupTitle(url, tasks);
   const actionableTask =
@@ -2271,10 +2353,19 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
     return '<p class="empty">Нет задач для отображения.</p>';
   }
 
-  return groupQueueByDay(tasks)
+  const isSearching = normalizeSearchQuery(queueSearchQuery).length > 0;
+  const renderedGroups = groupQueueByDay(tasks)
     .map((group) => {
-      const isCollapsed = collapsedDays[group.dayKey] === true;
-      const visibleGroupTasks = filterVisibleTasks(group.tasks, hideInactive);
+      const visibleGroupTasks = filterTasksBySearch(
+        filterVisibleTasks(group.tasks, hideInactive),
+        queueSearchQuery,
+        formatStatus
+      );
+      if (isSearching && !visibleGroupTasks.length) {
+        return '';
+      }
+
+      const isCollapsed = !isSearching && collapsedDays[group.dayKey] === true;
 
       return `
         <section class="task-day-group">
@@ -2307,7 +2398,8 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
                               group.dayKey,
                               urlGroup.url,
                               urlGroup.tasks,
-                              selectedTask
+                              selectedTask,
+                              isSearching
                             )
                           : renderTaskMarkup(urlGroup.tasks[0], selectedTask)
                       )
@@ -2318,7 +2410,13 @@ function renderTaskListMarkup(tasks: DownloadTask[], selectedTask: DownloadTask 
         </section>
       `;
     })
-    .join('');
+    .filter(Boolean);
+
+  if (!renderedGroups.length) {
+    return '<p class="empty">Ничего не найдено.</p>';
+  }
+
+  return renderedGroups.join('');
 }
 
 function renderMinimapItem(task: DownloadTask): string {
@@ -2340,6 +2438,8 @@ function renderMinimapItem(task: DownloadTask): string {
 }
 
 function renderDownloadsMinimap(tasks: DownloadTask[]): string {
+  const emptyText = normalizeSearchQuery(queueSearchQuery) ? 'Ничего не найдено.' : 'Нет задач.';
+
   return `
     <aside class="panel downloads-minimap" aria-label="Миникарта закачек">
       <div class="section-head">
@@ -2350,7 +2450,7 @@ function renderDownloadsMinimap(tasks: DownloadTask[]): string {
         ${
           tasks.length
             ? tasks.map((task) => renderMinimapItem(task)).join('')
-            : '<p class="empty">Нет задач.</p>'
+            : `<p class="empty">${emptyText}</p>`
         }
       </div>
     </aside>
@@ -2420,6 +2520,18 @@ function refreshQueueView(): void {
   queueCount.textContent = formatQueueCount(visibleQueue);
   queueMetaDir.textContent = `Папка: ${settings.downloadDir || 'не выбрана'}`;
   queueMetaConcurrent.textContent = `Параллельно: ${settings.maxConcurrentDownloads}`;
+  const queueSearchInput = document.querySelector<HTMLInputElement>('#queue-search');
+  const queueSearchClear = document.querySelector<HTMLButtonElement>('#queue-search-clear');
+  if (
+    queueSearchInput &&
+    document.activeElement !== queueSearchInput &&
+    queueSearchInput.value !== queueSearchQuery
+  ) {
+    queueSearchInput.value = queueSearchQuery;
+  }
+  if (queueSearchClear) {
+    queueSearchClear.hidden = !queueSearchQuery;
+  }
   queueMessage.innerHTML = addMessage ? escapeHtml(addMessage) : '';
   queueMessage.style.display = addMessage ? 'block' : 'none';
   taskList.innerHTML = renderTaskListMarkup(queue, selectedTask);
@@ -2428,12 +2540,15 @@ function refreshQueueView(): void {
 
   const minimapCount = document.querySelector<HTMLElement>('#minimap-count');
   const minimapItems = document.querySelector<HTMLElement>('#minimap-items');
+  const minimapEmptyText = normalizeSearchQuery(queueSearchQuery)
+    ? 'Ничего не найдено.'
+    : 'Нет задач.';
 
   if (minimapCount && minimapItems) {
     minimapCount.textContent = String(visibleQueue.length);
     minimapItems.innerHTML = visibleQueue.length
       ? visibleQueue.map((task) => renderMinimapItem(task)).join('')
-      : '<p class="empty">Нет задач.</p>';
+      : `<p class="empty">${minimapEmptyText}</p>`;
     bindMinimapEvents();
   }
 
@@ -2753,6 +2868,10 @@ function render(): void {
                   <span id="queue-download-dir">Папка: ${escapeHtml(settings.downloadDir || 'не выбрана')}</span>
                   <span id="queue-concurrent">Параллельно: ${settings.maxConcurrentDownloads}</span>
                 </div>
+                <div class="queue-search">
+                  <input id="queue-search" type="search" value="${escapeHtml(queueSearchQuery)}" placeholder="Поиск по названию, ссылке или статусу" aria-label="Поиск по загрузкам" autocomplete="off" />
+                  <button class="ghost bordered queue-search-clear" id="queue-search-clear" type="button" ${queueSearchQuery ? '' : 'hidden'}>Сбросить</button>
+                </div>
                 <p class="inline-message" id="queue-message" ${addMessage ? '' : 'style="display: none;"'}>${addMessage ? escapeHtml(addMessage) : ''}</p>
                 <div class="task-list" id="task-list">
                   ${renderTaskListMarkup(queue, selectedTask)}
@@ -2777,17 +2896,24 @@ function render(): void {
 }
 
 function bindSettingsEvents(): void {
-  document
-    .querySelector<HTMLInputElement>('#settings-search')
-    ?.addEventListener('input', (event) => {
-      const input = event.currentTarget as HTMLInputElement;
-      const cursorPosition = input.selectionStart ?? input.value.length;
-      settingsSearchQuery = input.value;
+  const settingsSearchInput = document.querySelector<HTMLInputElement>('#settings-search');
+  settingsSearchInput?.addEventListener('input', (event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const cursorPosition = input.selectionStart ?? input.value.length;
+    settingsSearchQuery = input.value;
+    render();
+    const nextInput = document.querySelector<HTMLInputElement>('#settings-search');
+    nextInput?.focus();
+    nextInput?.setSelectionRange(cursorPosition, cursorPosition);
+  });
+  settingsSearchInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && settingsSearchQuery) {
+      event.preventDefault();
+      settingsSearchQuery = '';
       render();
-      const nextInput = document.querySelector<HTMLInputElement>('#settings-search');
-      nextInput?.focus();
-      nextInput?.setSelectionRange(cursorPosition, cursorPosition);
-    });
+      document.querySelector<HTMLInputElement>('#settings-search')?.focus();
+    }
+  });
 
   document.querySelectorAll<HTMLButtonElement>('[data-settings-mode]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -3320,6 +3446,32 @@ function bindQueueStaticEvents(): void {
   document.querySelector<HTMLFormElement>('#add-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
     void addDownload();
+  });
+
+  const queueSearchInput = document.querySelector<HTMLInputElement>('#queue-search');
+  const queueSearchClear = document.querySelector<HTMLButtonElement>('#queue-search-clear');
+
+  queueSearchInput?.addEventListener('input', () => {
+    queueSearchQuery = queueSearchInput.value;
+    refreshQueueView();
+  });
+
+  queueSearchInput?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && queueSearchQuery) {
+      event.preventDefault();
+      queueSearchQuery = '';
+      queueSearchInput.value = '';
+      refreshQueueView();
+    }
+  });
+
+  queueSearchClear?.addEventListener('click', () => {
+    queueSearchQuery = '';
+    if (queueSearchInput) {
+      queueSearchInput.value = '';
+      queueSearchInput.focus();
+    }
+    refreshQueueView();
   });
 }
 
@@ -4019,6 +4171,45 @@ function applyQueueUpdate(update: DownloadUpdate): void {
   }
   refreshViewAfterQueueUpdate();
 }
+
+window.addEventListener('keydown', (event) => {
+  if (folderPicker || isConfigModalOpen || isInstallUpdateModalOpen) {
+    return;
+  }
+
+  const isFindShortcut =
+    (event.metaKey || event.ctrlKey) &&
+    !event.altKey &&
+    !event.shiftKey &&
+    (event.code === 'KeyF' || event.key.toLowerCase() === 'f');
+  if (!isFindShortcut) {
+    return;
+  }
+
+  if (currentTab === 'queue') {
+    const searchInput = document.querySelector<HTMLInputElement>('#queue-search');
+    if (searchInput) {
+      event.preventDefault();
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
+
+  if (currentTab === 'settings') {
+    if (settingsMode !== 'ui') {
+      settingsMode = 'ui';
+      textConfigDraft = null;
+      render();
+    }
+    const settingsSearch = document.querySelector<HTMLInputElement>('#settings-search');
+    if (settingsSearch) {
+      event.preventDefault();
+      settingsSearch.focus();
+      settingsSearch.select();
+    }
+  }
+});
 
 window.ytdlp.onQueueUpdate((update) => {
   applyQueueUpdate(update);
