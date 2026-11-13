@@ -746,7 +746,7 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
         kind: 'browser-cookies',
         label: 'Cookies из браузера',
         description:
-          'Для Chromium-based браузеров укажите имя профиля (например, chrome:Default или chromium:Profile 1). Для Firefox-based браузеров (Firefox, LibreWolf, Zen, Waterfox, Floorp) выберите firefox и укажите путь к папке профиля.',
+          'Для Chromium-based браузеров выберите браузер и укажите имя профиля (например, Default или Profile 1). Для Firefox-based браузеров (Firefox, LibreWolf, Zen, Waterfox, Floorp) выберите firefox и укажите путь к папке профиля.',
         original: '--cookies-from-browser BROWSER[+KEYRING][:PROFILE][::CONTAINER]'
       },
       {
