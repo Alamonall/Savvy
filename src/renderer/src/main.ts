@@ -746,7 +746,7 @@ const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
         kind: 'browser-cookies',
         label: 'Cookies из браузера',
         description:
-          'Браузер, профиль и контейнер. LibreWolf, Zen, Waterfox и другие Firefox-based браузеры — это Firefox с папкой их профиля.',
+          'Для Chromium-based браузеров укажите имя профиля (например, chrome:Default или chromium:Profile 1). Для Firefox-based браузеров (Firefox, LibreWolf, Zen, Waterfox, Floorp) выберите firefox и укажите путь к папке профиля.',
         original: '--cookies-from-browser BROWSER[+KEYRING][:PROFILE][::CONTAINER]'
       },
       {
@@ -1667,6 +1667,11 @@ function renderBrowserCookiesOption(
             ? `<input data-cookies-browser-part="container" type="text" value="${escapeHtml(spec.container)}" placeholder="Контейнер Firefox (none — без контейнера)" />`
             : ''
         }
+        <span class="settings-option-hint">Закройте браузер перед импортом.${
+          spec.browser === 'firefox'
+            ? ' Папка профиля должна содержать <code>cookies.sqlite</code>; если база не найдена, выбран не тот профиль.'
+            : ''
+        }</span>
       </div>
     </div>
   `;

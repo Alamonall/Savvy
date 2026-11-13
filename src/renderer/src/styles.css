@@ -1091,6 +1091,12 @@ label.settings-option {
   gap: 8px;
 }
 
+.settings-option-hint {
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .config-textarea {
   min-height: 460px;
 }
@@ -1851,6 +1857,7 @@ label.settings-option {
 [data-theme='dark'] .section-head span,
 [data-theme='dark'] .queue-meta,
 [data-theme='dark'] .settings-option-description,
+[data-theme='dark'] .settings-option-hint,
 [data-theme='dark'] .config-versions li,
 [data-theme='dark'] .task-day-arrow,
 [data-theme='dark'] .task-day-hide-inactive {
