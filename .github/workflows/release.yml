@@ -52,7 +52,19 @@ jobs:
           cache: npm
 
       - name: Установить зависимости
-        run: npm ci
+        run: |
+          export ELECTRON_MIRROR=https://github.com/electron/electron/releases/download/
+          for attempt in 1 2 3; do
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((15 * 2 ** (attempt - 1)))
+              echo "npm ci failed (attempt $attempt/3); retrying in $delay seconds..."
+              sleep "$delay"
+            fi
+          done
+          exit 1
 
       - name: Определить следующую версию
         id: release-version
@@ -182,7 +194,19 @@ jobs:
           cache: npm
 
       - name: Установить зависимости
-        run: npm ci
+        run: |
+          export ELECTRON_MIRROR=https://github.com/electron/electron/releases/download/
+          for attempt in 1 2 3; do
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((15 * 2 ** (attempt - 1)))
+              echo "npm ci failed (attempt $attempt/3); retrying in $delay seconds..."
+              sleep "$delay"
+            fi
+          done
+          exit 1
 
       - name: Установить версию сборки
         env:
@@ -236,7 +260,19 @@ jobs:
           cache: npm
 
       - name: Установить зависимости
-        run: npm ci
+        run: |
+          export ELECTRON_MIRROR=https://github.com/electron/electron/releases/download/
+          for attempt in 1 2 3; do
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((15 * 2 ** (attempt - 1)))
+              echo "npm ci failed (attempt $attempt/3); retrying in $delay seconds..."
+              sleep "$delay"
+            fi
+          done
+          exit 1
 
       - name: Скачать установщики
         uses: actions/download-artifact@v7
