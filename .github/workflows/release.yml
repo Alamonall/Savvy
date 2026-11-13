@@ -194,6 +194,7 @@ jobs:
           cache: npm
 
       - name: Установить зависимости
+        shell: bash
         run: |
           export ELECTRON_MIRROR=https://github.com/electron/electron/releases/download/
           for attempt in 1 2 3; do
