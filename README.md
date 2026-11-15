@@ -145,3 +145,71 @@ Renderer не получает прямого доступа к Node.js: окн�
 ## Разработка
 
 Изменения в проекте должны соответствовать строгому TypeScript, ESLint и Prettier. Новую функциональность следует сначала покрыть тестом, затем реализовать и проверить командами из раздела «Проверки качества».
+
+## Интеграция с ИИ-агентами (Codex, Gemini, MCP)
+
+Savvy поднимает локальный HTTP- и MCP-сервер на `127.0.0.1` (порт по умолчанию `47832`, Bearer-токен и адрес сохраняются в `agent-api.json` в каталоге `userData`). В настройках приложения можно включить или отключить этот сервер, обновить токен и скопировать готовую конфигурацию.
+
+### Как применять: пошаговая настройка
+
+1. **Требование:** на компьютере должен быть установлен `Node.js` (версия 20+ / 24+, доступный как `node` в `PATH` — при необходимости укажите полный путь, например `/opt/homebrew/bin/node`).
+2. Откройте Savvy → **Настройки** → **API для ИИ-агентов (MCP)** и убедитесь, что переключатель **«Локальный сервер для ИИ-агентов»** включён.
+3. Нажмите **«Скопировать конфиг Codex»** или **«Скопировать конфиг Gemini»** (подставится точный путь к `savvy-mcp.mjs` на вашем ПК).
+4. Добавьте скопированный блок в конфиг нужного агента:
+
+- **Codex CLI** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.savvy]
+command = "node"
+args = ["/Applications/Savvy.app/Contents/Resources/mcp/savvy-mcp.mjs"]
+```
+
+_(Если используете из исходников, путь будет `<repo>/resources/mcp/savvy-mcp.mjs`.)_
+
+- **Gemini CLI / Antigravity** (`~/.gemini/settings.json`):
+  Если файл уже содержит объект `mcpServers`, добавьте внутрь него ключ `"savvy"`:
+
+```json
+{
+  "mcpServers": {
+    "savvy": {
+      "command": "node",
+      "args": ["/Applications/Savvy.app/Contents/Resources/mcp/savvy-mcp.mjs"]
+    }
+  }
+}
+```
+
+5. Перезапустите сессию Codex или Gemini и просто попросите агента:
+   - _«Скачай это видео через Savvy: https://www.youtube.com/watch?v=...»_
+   - _«Скачай только аудио в mp3 в папку ~/Music через Savvy: ...»_
+   - _«Проверь статус загрузок в Savvy»_
+
+Если Savvy в этот момент закрыт, MCP-мост автоматически запустит приложение и поставит ссылку в очередь. Если ссылка уже есть в очереди/истории Savvy, повторный вызов `download_video` вернёт существующую задачу (а для `failed`/`cancelled` — автоматически перезапустит её).
+
+### Доступные MCP-инструменты
+
+- `download_video` — поставить видео или аудио в очередь Savvy (`url`, опционально `downloadDir`, `optionsText`, `waitForCompletion`, `timeoutSeconds`);
+- `list_downloads` — получить список задач и их статусы;
+- `get_download_status` — узнать прогресс, заголовок, путь и последние строки лога задачи;
+- `cancel_download` / `retry_download` — отменить или повторить задачу;
+- `get_savvy_settings` — прочитать текущие настройки скачивания Savvy.
+
+### Локальный HTTP API (пример с `curl`)
+
+Также доступны REST-эндпоинты с заголовком `Authorization: Bearer <token>` (актуальные `baseUrl` и `token` находятся в `agent-api.json` в каталоге `userData` Savvy):
+
+```bash
+curl -sS -X POST http://127.0.0.1:47832/api/downloads \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'
+```
+
+- `GET /health` — проверка доступности сервера (без авторизации);
+- `GET /api/downloads`, `GET /api/downloads/:id` — список и детали задач;
+- `POST /api/downloads` — добавить задачу `{ "url": "...", "downloadDir": "...", "optionsText": "..." }`;
+- `POST /api/downloads/:id/cancel`, `POST /api/downloads/:id/retry` — отменить или повторить задачу;
+- `GET /api/settings` — текущие настройки;
+- `POST /mcp` — MCP Streamable HTTP (JSON-RPC 2.0).
