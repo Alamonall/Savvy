@@ -89,6 +89,19 @@ export interface AppSettings {
   rateLimit: string;
   cookiesFromBrowser: string;
   additionalOptions: string;
+  agentApiEnabled: boolean;
+}
+
+export interface AgentApiStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number | null;
+  baseUrl: string | null;
+  mcpHttpUrl: string | null;
+  mcpScriptPath: string;
+  discoveryFilePath: string;
+  token: string;
+  errorMessage: string | null;
 }
 
 export interface YtdlpBinaryInfo {
@@ -172,6 +185,8 @@ export interface YtdlpApi {
     confirmedActiveDownloadCount: number,
     confirmedQueuedDownloadCount: number
   ): Promise<void>;
+  getAgentApiStatus(): Promise<AgentApiStatus>;
+  regenerateAgentApiToken(): Promise<AgentApiStatus>;
   onQueueUpdate(callback: (update: DownloadUpdate) => void): () => void;
   onApplicationUpdate(callback: (update: ApplicationUpdateState) => void): () => void;
 }

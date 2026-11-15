@@ -98,6 +98,12 @@ const api: YtdlpApi = {
       confirmedQueuedDownloadCount
     );
   },
+  getAgentApiStatus() {
+    return ipcRenderer.invoke('agent-api:get-status');
+  },
+  regenerateAgentApiToken() {
+    return ipcRenderer.invoke('agent-api:regenerate-token');
+  },
   onQueueUpdate(callback: (update: DownloadUpdate) => void) {
     const listener = (_event: IpcRendererEvent, update: DownloadUpdate): void => {
       callback(update);

@@ -75,6 +75,10 @@
       {
         "from": "build/ytdlp",
         "to": "bin"
+      },
+      {
+        "from": "resources/mcp",
+        "to": "mcp"
       }
     ],
     "asar": true,

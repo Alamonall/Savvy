@@ -6,6 +6,7 @@ import type { BrowserWindow as BrowserWindowType } from 'electron';
 import type { INestApplicationContext } from '@nestjs/common';
 import type { AddDownloadPayload, AppSettings } from '../shared/types';
 import { AppModule } from './app.module';
+import { AgentApiService } from './services/agent-api.service';
 import { ApplicationUpdaterService } from './services/application-updater.service';
 import { BinaryLocatorService } from './services/binary-locator.service';
 import { DownloadsService } from './services/downloads.service';
@@ -17,6 +18,7 @@ const { app, BrowserWindow, Notification, ipcMain } =
   require('electron') as typeof import('electron');
 
 type RuntimeServices = {
+  agentApi: AgentApiService;
   applicationUpdater: ApplicationUpdaterService;
   binaryLocator: BinaryLocatorService;
   downloads: DownloadsService;
@@ -35,6 +37,7 @@ export class ElectronApplication {
     app.setAppUserModelId('com.alamonall.savvy');
     this.nestApp = await NestFactory.createApplicationContext(AppModule, { logger: false });
     this.services = {
+      agentApi: this.nestApp.get(AgentApiService),
       applicationUpdater: this.nestApp.get(ApplicationUpdaterService),
       binaryLocator: this.nestApp.get(BinaryLocatorService),
       downloads: this.nestApp.get(DownloadsService),
@@ -65,6 +68,7 @@ export class ElectronApplication {
     this.registerIpcHandlers();
     this.setDockIcon();
     this.createWindow();
+    void this.services.agentApi.initialize();
     this.services.applicationUpdater.initialize();
     app.on('activate', this.handleActivate);
   }
@@ -162,7 +166,7 @@ export class ElectronApplication {
   }
 
   private registerIpcHandlers(): void {
-    const { applicationUpdater, binaryLocator, downloads, settings, shell } =
+    const { agentApi, applicationUpdater, binaryLocator, downloads, settings, shell } =
       this.getRuntimeServices();
     ipcMain.handle('downloads:add', (_, payload: AddDownloadPayload) => downloads.add(payload));
     ipcMain.handle('downloads:retry', (_, taskId: string) => downloads.retry(taskId));
@@ -197,11 +201,14 @@ export class ElectronApplication {
       settings.getEffectiveOptionsPreview()
     );
     ipcMain.handle('settings:get-effective-config-text', () => settings.getEffectiveConfigText());
-    ipcMain.handle('settings:update', (_, nextSettings: AppSettings) => {
+    ipcMain.handle('settings:update', async (_, nextSettings: AppSettings) => {
       const updatedSettings = settings.update(nextSettings);
       downloads.startNext();
+      await agentApi.syncWithSettings();
       return updatedSettings;
     });
+    ipcMain.handle('agent-api:get-status', () => agentApi.getStatus());
+    ipcMain.handle('agent-api:regenerate-token', () => agentApi.regenerateToken());
     ipcMain.handle('settings:list-folder-directories', (_, currentPath: string) =>
       shell.listFolderDirectories(currentPath)
     );
