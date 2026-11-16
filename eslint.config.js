@@ -26,13 +26,15 @@ export default tseslint.config(
     }
   },
   {
-    files: ['tests/**/*.mjs', 'scripts/**/*.mjs'],
+    files: ['tests/**/*.mjs', 'scripts/**/*.mjs', 'resources/**/*.mjs'],
     languageOptions: {
       globals: {
+        AbortSignal: 'readonly',
         Buffer: 'readonly',
         console: 'readonly',
         fetch: 'readonly',
-        process: 'readonly'
+        process: 'readonly',
+        setTimeout: 'readonly'
       }
     }
   }

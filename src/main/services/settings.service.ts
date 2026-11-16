@@ -59,7 +59,8 @@ export class SettingsService {
       downloadDir: nextSettings.downloadDir.trim() || currentSettings.downloadDir,
       maxConcurrentDownloads: Number.isFinite(maxConcurrentDownloads)
         ? Math.max(1, Math.min(8, Math.floor(maxConcurrentDownloads)))
-        : currentSettings.maxConcurrentDownloads
+        : currentSettings.maxConcurrentDownloads,
+      agentApiEnabled: Boolean(nextSettings.agentApiEnabled ?? currentSettings.agentApiEnabled)
     };
 
     if (normalizedSettings.forceOverwrites && normalizedSettings.noOverwrites) {
@@ -234,7 +235,8 @@ export class SettingsService {
       sponsorBlockMark: '',
       rateLimit: '',
       cookiesFromBrowser: '',
-      additionalOptions: ''
+      additionalOptions: '',
+      agentApiEnabled: true
     };
   }
 
