@@ -461,6 +461,55 @@ test('stdio MCP bridge сразу сообщает об ошибке, если A
   }
 });
 
+test('AgentHttpServer останавливается без длительной задержки даже при ожидании waitForCompletion', async () => {
+  const { AgentHttpServer } = await import('../src/main/agent-http-server.ts');
+  const { downloads, settings } = createMockDependencies();
+  const token = 'stop-test-token';
+
+  const server = new AgentHttpServer({
+    downloads,
+    settings,
+    version: '0.0.1-test',
+    getToken: () => token
+  });
+
+  const port = await server.start(0);
+  const mcpUrl = `http://127.0.0.1:${port}/mcp`;
+
+  const inFlightPromise = fetch(mcpUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'tools/call',
+      params: {
+        name: 'download_video',
+        arguments: {
+          url: 'https://youtu.be/never-completes',
+          waitForCompletion: true,
+          timeoutSeconds: 300
+        }
+      }
+    })
+  }).catch(() => null);
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const stopStartTime = Date.now();
+  await server.stop(300);
+  const stopDurationMs = Date.now() - stopStartTime;
+
+  assert.ok(
+    stopDurationMs < 2000,
+    `server.stop() занял слишком много времени: ${stopDurationMs}ms`
+  );
+  await inFlightPromise;
+});
+
 test('упакованное приложение включает MCP-мост в extraResources', () => {
   assert.ok(
     packageJson.build.extraResources.some(

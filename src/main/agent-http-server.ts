@@ -318,8 +318,8 @@ export class AgentHttpServer {
     }
   }
 
-  /** Останавливает HTTP-сервер и освобождает порт. */
-  async stop(): Promise<void> {
+  /** Останавливает HTTP-сервер, принудительно завершая оставшиеся соединения при истечении таймаута. */
+  async stop(graceTimeoutMs = 1500): Promise<void> {
     const activeServer = this.server;
     this.server = null;
     this.boundPort = null;
@@ -328,13 +328,30 @@ export class AgentHttpServer {
       return;
     }
 
-    await new Promise<void>((resolve, reject) => {
-      activeServer.close((error) => {
-        if (error) {
-          reject(error);
-          return;
+    await new Promise<void>((resolve) => {
+      let isSettled = false;
+      const finish = () => {
+        if (!isSettled) {
+          isSettled = true;
+          resolve();
         }
-        resolve();
+      };
+
+      const forceTimer = setTimeout(() => {
+        if (typeof activeServer.closeAllConnections === 'function') {
+          activeServer.closeAllConnections();
+        }
+        finish();
+      }, graceTimeoutMs);
+      forceTimer.unref?.();
+
+      if (typeof activeServer.closeIdleConnections === 'function') {
+        activeServer.closeIdleConnections();
+      }
+
+      activeServer.close(() => {
+        clearTimeout(forceTimer);
+        finish();
       });
     });
   }
@@ -640,7 +657,7 @@ export class AgentHttpServer {
       const timeoutSeconds = readBoundedInt(args.timeoutSeconds, 120, 1, 600);
       const deadline = Date.now() + timeoutSeconds * 1000;
 
-      while (Date.now() < deadline) {
+      while (Date.now() < deadline && this.server !== null) {
         const current = this.options.downloads.list().find((item) => item.id === task.id);
         if (!current) {
           break;
