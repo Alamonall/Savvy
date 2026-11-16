@@ -153,6 +153,9 @@ function tryLaunchSavvy(discovery) {
       detached: true,
       stdio: 'ignore'
     });
+    child.on('error', (error) => {
+      console.error(`Не удалось запустить Savvy: ${error.message}`);
+    });
     child.unref();
     return true;
   }
@@ -162,6 +165,9 @@ function tryLaunchSavvy(discovery) {
     const child = spawn(executablePath, [], {
       detached: true,
       stdio: 'ignore'
+    });
+    child.on('error', (error) => {
+      console.error(`Не удалось запустить Savvy: ${error.message}`);
     });
     child.unref();
     return true;
@@ -322,7 +328,10 @@ async function handleLine(line) {
 }
 
 const readline = createInterface({ input: process.stdin, crlfDelay: Infinity });
-let pendingLine = Promise.resolve();
 readline.on('line', (line) => {
-  pendingLine = pendingLine.then(() => handleLine(line));
+  void handleLine(line).catch((error) => {
+    console.error(
+      `Ошибка обработки MCP-запроса: ${error instanceof Error ? error.message : String(error)}`
+    );
+  });
 });

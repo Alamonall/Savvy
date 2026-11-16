@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { URL } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -175,6 +175,13 @@ test('AgentHttpServer обслуживает health, REST API и требует 
     assert.equal(retriedBody.task.id, 'task-2');
     assert.equal(retriedBody.task.status, 'queued');
 
+    const allRes = await fetch(`${baseUrl}/api/downloads`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(allRes.status, 200);
+    const allBody = await allRes.json();
+    assert.equal(allBody.tasks.length, 2);
+
     const settingsRes = await fetch(`${baseUrl}/api/settings`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -275,6 +282,23 @@ test('AgentHttpServer поддерживает MCP Streamable HTTP (initialize, 
     const duplicatePayload = JSON.parse(duplicateCallJson.result.content[0].text);
     assert.equal(duplicatePayload.alreadyExists, true);
     assert.equal(duplicatePayload.task.id, 'task-1');
+
+    const noLogRes = await fetch(mcpUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: {
+          name: 'get_download_status',
+          arguments: { taskId: 'task-1', logLines: 0 }
+        }
+      })
+    });
+    const noLogJson = await noLogRes.json();
+    const noLogPayload = JSON.parse(noLogJson.result.content[0].text);
+    assert.deepEqual(noLogPayload.task.recentLog, []);
   } finally {
     await server.stop();
   }
@@ -308,7 +332,7 @@ test('stdio MCP bridge (resources/mcp/savvy-mcp.mjs) работает с Codex/G
       })
     );
 
-    const scriptPath = new URL('../resources/mcp/savvy-mcp.mjs', import.meta.url).pathname;
+    const scriptPath = fileURLToPath(new URL('../resources/mcp/savvy-mcp.mjs', import.meta.url));
     const child = spawn(process.execPath, [scriptPath], {
       env: {
         ...process.env,
@@ -358,12 +382,12 @@ test('stdio MCP bridge (resources/mcp/savvy-mcp.mjs) работает с Codex/G
     await new Promise((resolve) => child.once('exit', resolve));
 
     assert.equal(responses.length, 3);
-    assert.equal(responses[0].id, 1);
-    assert.equal(responses[0].result.serverInfo.name, 'savvy');
-    assert.equal(responses[1].id, 2);
-    assert.ok(responses[1].result.tools.some((tool) => tool.name === 'download_video'));
-    assert.equal(responses[2].id, 3);
-    const callPayload = JSON.parse(responses[2].result.content[0].text);
+    const initResponse = responses.find((response) => response.id === 1);
+    const listResponse = responses.find((response) => response.id === 2);
+    const callResponse = responses.find((response) => response.id === 3);
+    assert.equal(initResponse?.result.serverInfo.name, 'savvy');
+    assert.ok(listResponse?.result.tools.some((tool) => tool.name === 'download_video'));
+    const callPayload = JSON.parse(callResponse?.result.content[0].text);
     assert.equal(callPayload.task.url, 'https://vimeo.com/123456');
     assert.equal(callPayload.task.status, 'queued');
   } finally {
@@ -389,7 +413,7 @@ test('stdio MCP bridge сразу сообщает об ошибке, если A
       })
     );
 
-    const scriptPath = new URL('../resources/mcp/savvy-mcp.mjs', import.meta.url).pathname;
+    const scriptPath = fileURLToPath(new URL('../resources/mcp/savvy-mcp.mjs', import.meta.url));
     const child = spawn(process.execPath, [scriptPath], {
       env: {
         ...process.env,
