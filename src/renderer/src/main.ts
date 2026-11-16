@@ -1995,8 +1995,7 @@ function getMcpScriptPath(): string {
   return agentApiStatus?.mcpScriptPath ?? 'resources/mcp/savvy-mcp.mjs';
 }
 
-/** Секция настроек: локальный HTTP/MCP-сервер для Codex, Gemini и других ИИ-агентов. */
-function renderAgentApiSettingsSection(): string {
+function renderAgentApiStatusBox(): string {
   const status = agentApiStatus;
   const mcpScriptPath = getMcpScriptPath();
   const statusText = !settings.agentApiEnabled
@@ -2007,6 +2006,15 @@ function renderAgentApiSettingsSection(): string {
         ? `Ошибка: ${status.errorMessage}`
         : 'Запускается…';
 
+  return `
+    <p>Состояние: ${escapeHtml(statusText)}</p>
+    ${status?.mcpHttpUrl ? `<p>MCP HTTP: ${escapeHtml(status.mcpHttpUrl)}</p>` : ''}
+    <p>MCP-мост (stdio): ${escapeHtml(mcpScriptPath)}</p>
+  `;
+}
+
+/** Секция настроек: локальный HTTP/MCP-сервер для Codex, Gemini и других ИИ-агентов. */
+function renderAgentApiSettingsSection(): string {
   return `
     <section class="panel settings-panel settings-list-panel">
       <div class="section-head">
@@ -2020,10 +2028,8 @@ function renderAgentApiSettingsSection(): string {
         </span>
         <input data-setting-checkbox="agentApiEnabled" type="checkbox" ${settings.agentApiEnabled ? 'checked' : ''} />
       </label>
-      <div class="inherited-box">
-        <p>Состояние: ${escapeHtml(statusText)}</p>
-        ${status?.mcpHttpUrl ? `<p>MCP HTTP: ${escapeHtml(status.mcpHttpUrl)}</p>` : ''}
-        <p>MCP-мост (stdio): ${escapeHtml(mcpScriptPath)}</p>
+      <div class="inherited-box" id="agent-api-status-box">
+        ${renderAgentApiStatusBox()}
       </div>
       <div class="modal-actions">
         <button class="ghost bordered" id="copy-codex-mcp-config" type="button">Скопировать конфиг Codex</button>
@@ -2214,6 +2220,11 @@ function refreshSettingsPanelView(): void {
 
   if (optionsPreview) {
     optionsPreview.textContent = effectiveOptionsPreview || 'Без дополнительных аргументов';
+  }
+
+  const agentApiStatusBox = document.querySelector<HTMLElement>('#agent-api-status-box');
+  if (agentApiStatusBox) {
+    agentApiStatusBox.innerHTML = renderAgentApiStatusBox();
   }
 
   if (settingsMode === 'text' && textConfigDraft === null) {

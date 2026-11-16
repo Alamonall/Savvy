@@ -174,7 +174,7 @@ function summarizeTask(task: DownloadTask, logLines = 20): Record<string, unknow
     finishedAt: task.finishedAt ?? null,
     exitCode: task.exitCode ?? null,
     userMessage: task.userMessage ?? null,
-    recentLog: task.log.slice(-Math.max(0, logLines))
+    recentLog: logLines > 0 ? task.log.slice(-logLines) : []
   };
 }
 
@@ -255,6 +255,10 @@ function readOptionalString(value: unknown): string {
 }
 
 function readBoundedInt(value: unknown, fallback: number, min: number, max: number): number {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) {
     return fallback;

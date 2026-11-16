@@ -19,7 +19,7 @@ export class AgentApiService implements OnModuleDestroy {
   private httpServer: AgentHttpServer | null = null;
   private token = '';
   private errorMessage: string | null = null;
-  private isStartingOrStopping = false;
+  private operationQueue: Promise<void> = Promise.resolve();
 
   constructor(
     @Inject(DownloadsService) private readonly downloadsService: DownloadsService,
@@ -28,26 +28,44 @@ export class AgentApiService implements OnModuleDestroy {
 
   /** Останавливает HTTP-сервер и обновляет файл обнаружения при завершении работы модуля. */
   async onModuleDestroy(): Promise<void> {
-    await this.stopServer();
+    await this.enqueueOperation(async () => {
+      await this.stopServer();
+    });
   }
 
   /** Инициализирует токен и запускает сервер, если API для ИИ-агентов включён в настройках. */
   async initialize(): Promise<void> {
-    this.token = this.loadOrCreateToken();
+    try {
+      this.token = this.loadOrCreateToken();
+      this.errorMessage = null;
+    } catch (error) {
+      this.errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Не удалось загрузить токен сервера для ИИ-агентов.';
+      console.error(`[agent-api:error] ${this.errorMessage}`);
+      return;
+    }
+
     await this.syncWithSettings();
   }
 
   /** Синхронизирует состояние сервера с настройкой `agentApiEnabled`. */
   async syncWithSettings(): Promise<AgentApiStatus> {
-    const enabled = this.settingsService.get().agentApiEnabled;
+    await this.enqueueOperation(async () => {
+      const enabled = this.settingsService.get().agentApiEnabled;
 
-    if (enabled && !this.httpServer) {
-      await this.startServer();
-    } else if (!enabled && this.httpServer) {
-      await this.stopServer();
-    } else if (!enabled) {
-      this.writeDiscoveryFile(null);
-    }
+      if (enabled && !this.httpServer) {
+        if (!this.token) {
+          this.token = this.loadOrCreateToken();
+        }
+        await this.startServer();
+      } else if (!enabled && this.httpServer) {
+        await this.stopServer();
+      } else if (!enabled) {
+        this.writeDiscoveryFile(null);
+      }
+    });
 
     return this.getStatus();
   }
@@ -64,8 +82,15 @@ export class AgentApiService implements OnModuleDestroy {
 
   /** Возвращает текущее состояние локального API и пути для подключения ИИ-агентов. */
   getStatus(): AgentApiStatus {
-    if (!this.token) {
-      this.token = this.loadOrCreateToken();
+    if (!this.token && !this.errorMessage) {
+      try {
+        this.token = this.loadOrCreateToken();
+      } catch (error) {
+        this.errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Не удалось загрузить токен сервера для ИИ-агентов.';
+      }
     }
 
     const enabled = this.settingsService.get().agentApiEnabled;
@@ -86,12 +111,21 @@ export class AgentApiService implements OnModuleDestroy {
     };
   }
 
+  private enqueueOperation(operation: () => Promise<void>): Promise<void> {
+    const next = this.operationQueue.then(operation, operation);
+    this.operationQueue = next.catch((error) => {
+      this.errorMessage =
+        error instanceof Error ? error.message : 'Ошибка управления сервером для ИИ-агентов.';
+      console.error(`[agent-api:error] ${this.errorMessage}`);
+    });
+    return this.operationQueue;
+  }
+
   private async startServer(): Promise<void> {
-    if (this.isStartingOrStopping || this.httpServer) {
+    if (this.httpServer) {
       return;
     }
 
-    this.isStartingOrStopping = true;
     this.errorMessage = null;
 
     try {
@@ -109,8 +143,6 @@ export class AgentApiService implements OnModuleDestroy {
       this.errorMessage =
         error instanceof Error ? error.message : 'Не удалось запустить сервер для ИИ-агентов.';
       console.error(`[agent-api:error] ${this.errorMessage}`);
-    } finally {
-      this.isStartingOrStopping = false;
     }
   }
 
