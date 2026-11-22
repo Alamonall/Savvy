@@ -536,4 +536,12 @@ test('настройки и IPC-контракт содержат API для И�
   assert.match(renderer, /API для ИИ-агентов/);
   assert.match(renderer, /codex/i);
   assert.match(renderer, /gemini/i);
+  assert.match(
+    renderer,
+    /<label class="settings-option">\s*<input data-setting-checkbox="agentApiEnabled" type="checkbox"/
+  );
+  assert.match(renderer, /id="agent-api-status-box"/);
+  assert.match(renderer, /id="copy-codex-mcp-config"/);
+  assert.match(renderer, /id="copy-gemini-mcp-config"/);
+  assert.match(renderer, /id="regenerate-agent-api-token"/);
 });

@@ -2021,12 +2021,12 @@ function renderAgentApiSettingsSection(): string {
         <h2>API для ИИ-агентов (MCP)</h2>
         <span>Codex, Gemini</span>
       </div>
-      <label class="settings-option settings-option-checkbox">
+      <label class="settings-option">
+        <input data-setting-checkbox="agentApiEnabled" type="checkbox" ${settings.agentApiEnabled ? 'checked' : ''} />
         <span class="settings-option-copy">
           <span class="settings-option-title">Локальный сервер для ИИ-агентов</span>
           <span class="settings-option-description">Позволяет Codex, Gemini и локальным скриптам запускать скачивание и отслеживать очередь через Savvy.</span>
         </span>
-        <input data-setting-checkbox="agentApiEnabled" type="checkbox" ${settings.agentApiEnabled ? 'checked' : ''} />
       </label>
       <div class="inherited-box" id="agent-api-status-box">
         ${renderAgentApiStatusBox()}

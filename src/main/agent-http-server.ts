@@ -254,6 +254,18 @@ function readOptionalString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function buildAddDownloadInput(source: Record<string, unknown>): {
+  url: string;
+  downloadDir: string;
+  optionsText: string;
+} {
+  return {
+    url: readOptionalString(source.url).trim(),
+    downloadDir: readOptionalString(source.downloadDir),
+    optionsText: readOptionalString(source.optionsText)
+  };
+}
+
 function readBoundedInt(value: unknown, fallback: number, min: number, max: number): number {
   if (value === null || value === undefined || value === '') {
     return fallback;
@@ -458,11 +470,7 @@ export class AgentHttpServer {
     }
 
     try {
-      const task = this.options.downloads.add({
-        url: readOptionalString(body.url),
-        downloadDir: readOptionalString(body.downloadDir),
-        optionsText: readOptionalString(body.optionsText)
-      });
+      const task = this.options.downloads.add(buildAddDownloadInput(body));
       sendJson(res, 201, { task });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не удалось добавить задачу.';
@@ -626,17 +634,14 @@ export class AgentHttpServer {
   private async runDownloadVideoTool(
     args: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const url = readOptionalString(args.url).trim();
+    const input = buildAddDownloadInput(args);
+    const url = input.url;
     let task: DownloadTask;
     let alreadyExists = false;
     let retried = false;
 
     try {
-      task = this.options.downloads.add({
-        url,
-        downloadDir: readOptionalString(args.downloadDir),
-        optionsText: readOptionalString(args.optionsText)
-      });
+      task = this.options.downloads.add(input);
     } catch (error) {
       const existing = this.options.downloads.list().find((item) => item.url === url);
       if (!existing) {
