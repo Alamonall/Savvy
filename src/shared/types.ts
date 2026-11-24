@@ -14,6 +14,7 @@ export interface DownloadTask {
   exitCode?: number | null;
   progress?: number | null;
   userMessage?: string | null;
+  ytdlpUpdateRecommended?: boolean;
   log: string[];
 }
 

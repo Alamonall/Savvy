@@ -14,6 +14,11 @@ import {
   parseTitleFromLogLine,
   SAVVY_TITLE_PREFIX
 } from '../../shared/task-title';
+import {
+  buildNoCookiesBypassArgs,
+  hasCookieConfiguration,
+  isYoutubeNChallengeDisposeError
+} from '../../shared/youtube-n-challenge';
 import type { AddDownloadPayload, DownloadTask, DownloadUpdate } from '../../shared/types';
 import { BinaryLocatorService } from './binary-locator.service';
 import { SettingsService } from './settings.service';
@@ -29,6 +34,10 @@ type FailureDetails = {
 
 const YOUTUBE_JS_RUNTIME_MESSAGE =
   'YouTube не отдал видеоформаты: yt-dlp не смог решить n challenge. Добавь в дополнительные аргументы "--js-runtimes deno" или обнови yt-dlp/JS runtime.';
+const YTDLP_N_CHALLENGE_BYPASS_RUNNING_MESSAGE =
+  'Обнаружена ошибка YouTube n-challenge при работе с cookies. Запущен автоматический обход без cookies — рекомендуем обновить yt-dlp в настройках.';
+const YTDLP_N_CHALLENGE_BYPASS_DONE_MESSAGE =
+  'Скачано в обход без cookies из-за ошибки YouTube n-challenge. Рекомендуем обновить yt-dlp (2026.11.23+) в настройках.';
 const X_TIMEOUT_MESSAGE =
   'Не удалось подключиться к x.com: соединение истекло по таймауту. Для Twitter/X проверь доступ к сайту из этой сети, укажи Proxy/VPN в настройках сети, при необходимости увеличь "Таймаут сокета" и используй cookies из браузера.';
 const MAX_CONCURRENT_TITLE_LOOKUPS = 3;
@@ -41,6 +50,7 @@ export class DownloadsService implements OnModuleDestroy {
   private readonly activeTaskIds = new Set<string>();
   private readonly activeChildren = new Map<string, ChildProcess>();
   private readonly partialLogBuffers = new Map<string, string>();
+  private readonly retriedWithoutCookiesTaskIds = new Set<string>();
   private readonly pendingUpdateTaskIds = new Set<string>();
   private readonly titleCache = new Map<string, string>();
   private readonly attemptedTitleUrls = new Set<string>();
@@ -309,77 +319,115 @@ export class DownloadsService implements OnModuleDestroy {
       }
 
       task.userMessage = null;
+      task.ytdlpUpdateRecommended = false;
       task.log.push(`Запуск yt-dlp в папке: ${task.downloadDir}`);
       task.log.push(`Используется бинарник: ${ytdlpPath}`);
       task.log.push(`Конфигурация yt-dlp:\n${task.effectiveConfigText}`);
       this.emitQueueUpdate(task);
 
       const baseArgs = this.settingsService.parseOptions(task.optionsText);
-      const args = [...baseArgs, ...this.buildTitlePrintArgs(baseArgs), task.url];
-      const child = spawn(ytdlpPath, args, {
-        cwd: task.downloadDir,
-        shell: false
-      });
-      this.activeChildren.set(task.id, child);
-
-      child.stdout.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
-      child.stderr.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
-
-      child.on('error', (error) => {
-        this.flushPartialLogBuffer(task);
-        if (task.status === 'cancelled') {
-          this.finishCancelledTask(task);
-          return;
-        }
-
-        task.status = 'failed';
-        task.finishedAt = Date.now();
-        task.userMessage =
-          'Не удалось запустить yt-dlp. Проверь установку приложения и доступность бинарника.';
-        task.log.push(`Ошибка запуска yt-dlp: ${error.message}`);
-        this.activeTaskIds.delete(task.id);
-        this.activeChildren.delete(task.id);
-        this.emitQueueUpdate(task);
-        this.startNext();
-      });
-
-      child.on('close', (code) => {
-        this.flushPartialLogBuffer(task);
-        if (task.status === 'cancelled') {
-          this.finishCancelledTask(task);
-          return;
-        }
-
-        if (task.status !== 'failed' && code === 0) {
-          task.status = 'done';
-          task.progress = 100;
-          task.exitCode = code;
-          task.finishedAt = Date.now();
-          task.userMessage = null;
-          task.log.push('Скачивание завершено.');
-        } else if (task.status !== 'failed') {
-          const failure = this.analyzeFailure(task);
-          task.status = 'failed';
-          task.exitCode = code;
-          task.finishedAt = Date.now();
-          task.userMessage = failure.userMessage;
-          task.log.push(`yt-dlp завершился с кодом ${code}.`);
-        }
-
-        this.activeTaskIds.delete(task.id);
-        this.activeChildren.delete(task.id);
-        this.emitQueueUpdate(task);
-        if (isUnresolvedTaskTitle(task)) {
-          this.enqueueTitleResolution(task.url);
-        }
-        this.startNext();
-      });
+      this.spawnTaskProcess(task, ytdlpPath, baseArgs);
     }
+  }
+
+  /** Запускает процесс yt-dlp для задачи и при ошибке решателя n-challenge повторяет его без cookies. */
+  private spawnTaskProcess(task: DownloadTask, ytdlpPath: string, baseArgs: string[]): void {
+    const args = [...baseArgs, ...this.buildTitlePrintArgs(baseArgs), task.url];
+    const child = spawn(ytdlpPath, args, {
+      cwd: task.downloadDir,
+      shell: false
+    });
+    this.activeChildren.set(task.id, child);
+
+    child.stdout.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
+    child.stderr.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
+
+    child.on('error', (error) => {
+      this.flushPartialLogBuffer(task);
+      if (task.status === 'cancelled') {
+        this.finishCancelledTask(task);
+        return;
+      }
+
+      task.status = 'failed';
+      task.finishedAt = Date.now();
+      task.userMessage =
+        'Не удалось запустить yt-dlp. Проверь установку приложения и доступность бинарника.';
+      task.log.push(`Ошибка запуска yt-dlp: ${error.message}`);
+      this.retriedWithoutCookiesTaskIds.delete(task.id);
+      this.activeTaskIds.delete(task.id);
+      this.activeChildren.delete(task.id);
+      this.emitQueueUpdate(task);
+      this.startNext();
+    });
+
+    child.on('close', (code) => {
+      this.flushPartialLogBuffer(task);
+      if (task.status === 'cancelled') {
+        this.finishCancelledTask(task);
+        return;
+      }
+
+      if (task.status !== 'failed' && code !== 0 && this.shouldRetryWithoutCookies(task)) {
+        this.retriedWithoutCookiesTaskIds.add(task.id);
+        task.ytdlpUpdateRecommended = true;
+        task.userMessage = YTDLP_N_CHALLENGE_BYPASS_RUNNING_MESSAGE;
+        task.log.push(
+          'Обнаружена ошибка решения YouTube n-challenge при работе с cookies (устаревший yt-dlp). Автоматически запускаем обход без cookies...'
+        );
+        this.emitQueueUpdate(task);
+        this.spawnTaskProcess(task, ytdlpPath, buildNoCookiesBypassArgs(baseArgs));
+        return;
+      }
+
+      if (task.status !== 'failed' && code === 0) {
+        task.status = 'done';
+        task.progress = 100;
+        task.exitCode = code;
+        task.finishedAt = Date.now();
+        task.userMessage = task.ytdlpUpdateRecommended
+          ? YTDLP_N_CHALLENGE_BYPASS_DONE_MESSAGE
+          : null;
+        task.log.push(
+          task.ytdlpUpdateRecommended
+            ? 'Скачивание завершено (в обход без cookies). Рекомендуем обновить yt-dlp в настройках.'
+            : 'Скачивание завершено.'
+        );
+      } else if (task.status !== 'failed') {
+        const failure = this.analyzeFailure(task);
+        task.status = 'failed';
+        task.exitCode = code;
+        task.finishedAt = Date.now();
+        task.userMessage = failure.userMessage;
+        task.log.push(`yt-dlp завершился с кодом ${code}.`);
+      }
+
+      this.retriedWithoutCookiesTaskIds.delete(task.id);
+      this.activeTaskIds.delete(task.id);
+      this.activeChildren.delete(task.id);
+      this.emitQueueUpdate(task);
+      if (isUnresolvedTaskTitle(task)) {
+        this.enqueueTitleResolution(task.url);
+      }
+      this.startNext();
+    });
+  }
+
+  private shouldRetryWithoutCookies(task: DownloadTask): boolean {
+    if (this.retriedWithoutCookiesTaskIds.has(task.id)) {
+      return false;
+    }
+
+    return (
+      hasCookieConfiguration(task.effectiveConfigText, task.optionsText) &&
+      isYoutubeNChallengeDisposeError(task.log.join('\n'))
+    );
   }
 
   /** Освобождает слот очереди после завершения отменённого процесса. */
   private finishCancelledTask(task: DownloadTask): void {
     this.partialLogBuffers.delete(task.id);
+    this.retriedWithoutCookiesTaskIds.delete(task.id);
     if (!this.activeTaskIds.delete(task.id)) {
       return;
     }
