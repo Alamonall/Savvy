@@ -1199,21 +1199,36 @@ function renderTaskLog(task: DownloadTask): string {
   `;
 }
 
+/** Общий каркас панели рекомендаций в деталях задачи. */
+function renderRecommendationPanel(
+  ariaLabel: string,
+  title: string,
+  description: string,
+  actionsMarkup: string
+): string {
+  return `
+    <section class="http-403-recommendations" aria-label="${escapeHtml(ariaLabel)}">
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(description)}</p>
+      <div class="task-actions">
+        ${actionsMarkup}
+      </div>
+    </section>
+  `;
+}
+
 /** Показывает предупреждение об обновлении yt-dlp после автообхода ошибки YouTube n-challenge. */
 function renderYtdlpUpdateRecommendation(task: DownloadTask): string {
   if (!task.ytdlpUpdateRecommended) {
     return '';
   }
 
-  return `
-    <section class="http-403-recommendations" aria-label="Предупреждение об обновлении yt-dlp">
-      <h3>Стоит обновить yt-dlp</h3>
-      <p>Обнаружена ошибка YouTube n-challenge при работе с cookies — для задачи запущен автоматический обход без cookies. Обнови yt-dlp до версии 2026.11.23 или новее, чтобы скачивание с cookies снова работало.</p>
-      <div class="task-actions">
-        <button class="task-action" data-recommend-403-update type="button">Перейти к обновлению yt-dlp в настройках</button>
-      </div>
-    </section>
-  `;
+  return renderRecommendationPanel(
+    'Предупреждение об обновлении yt-dlp',
+    'Стоит обновить yt-dlp',
+    'Обнаружена ошибка YouTube n-challenge при работе с cookies — для задачи запущен автоматический обход без cookies. Обнови yt-dlp до версии 2026.11.23 или новее, чтобы скачивание с cookies снова работало.',
+    '<button class="task-action" data-recommend-403-update type="button">Перейти к обновлению yt-dlp в настройках</button>'
+  );
 }
 
 /** Показывает безопасные следующие шаги только для задачи, завершившейся отказом HTTP 403. */
@@ -1222,18 +1237,17 @@ function renderHttp403Recommendations(task: DownloadTask): string {
     return '';
   }
 
-  return `
-    <section class="http-403-recommendations" aria-label="Рекомендации по HTTP 403">
-      <h3>Как исправить HTTP 403</h3>
-      <p>Попробуй один шаг, затем повтори задачу: так будет понятно, какая настройка помогла.</p>
-      <div class="task-actions">
+  return renderRecommendationPanel(
+    'Рекомендации по HTTP 403',
+    'Как исправить HTTP 403',
+    'Попробуй один шаг, затем повтори задачу: так будет понятно, какая настройка помогла.',
+    `
         <button class="task-action" data-recommend-403-cookies="${task.id}" type="button">Настроить cookies</button>
         <button class="task-action" data-recommend-403-throttle="${task.id}" type="button">Снизить частоту и повторить</button>
         <button class="task-action" data-recommend-403-network type="button">Проверить сеть или proxy</button>
         <button class="task-action" data-recommend-403-update type="button">Обновить yt-dlp</button>
-      </div>
-    </section>
-  `;
+      `
+  );
 }
 
 /** Определяет, должен ли открытый журнал следовать за новыми строками. */

@@ -1,24 +1,69 @@
 /**
- * Определяет ошибку решателя YouTube n-challenge (например, `a.addOnDisposeCallback is not a function`),
+ * Определяет ошибку решателя YouTube n-challenge (`addOnDisposeCallback is not a function`),
  * возникающую в устаревших версиях yt-dlp (< 2026.11.23) при использовании cookies.
  */
 export function isYoutubeNChallengeDisposeError(logText: string): boolean {
-  if (/addOnDisposeCallback is not a function/i.test(logText)) {
-    return true;
-  }
-
-  return (
-    /Error solving n challenge request/i.test(logText) &&
-    (/n challenge solving failed/i.test(logText) ||
-      /Only images are available for download/i.test(logText) ||
-      /Requested format is not available/i.test(logText))
+  return /(?:^|\n)[^\n]*Error solving n challenge request[\s\S]{0,300}?addOnDisposeCallback is not a function/i.test(
+    logText
   );
 }
 
-/** Проверяет, заданы ли cookies в эффективной конфигурации или аргументах запуска задачи. */
+/** Разбивает строку конфига или аргументов на токены с учётом кавычек. */
+function tokenizeArgsLine(line: string): string[] {
+  const tokens: string[] = [];
+  const tokenPattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match: RegExpExecArray | null = tokenPattern.exec(line);
+
+  while (match !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[3]);
+    match = tokenPattern.exec(line);
+  }
+
+  return tokens;
+}
+
+/** Разбирает конфиг yt-dlp (без комментариев) и аргументы запуска в плоский список токенов. */
+function parseEffectiveTokens(effectiveConfigText: string, optionsText: string): string[] {
+  const configLines = effectiveConfigText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith(';'));
+
+  const tokens: string[] = [];
+  for (const line of configLines) {
+    tokens.push(...tokenizeArgsLine(line));
+  }
+  tokens.push(...tokenizeArgsLine(optionsText));
+  return tokens;
+}
+
+/** Проверяет, активны ли cookies в итоговой конфигурации или аргументах запуска задачи. */
 export function hasCookieConfiguration(effectiveConfigText: string, optionsText: string): boolean {
-  const cookieFlagPattern = /(?:^|\s)--cookies(?:-from-browser)?(?:=|\s|$)/m;
-  return cookieFlagPattern.test(effectiveConfigText) || cookieFlagPattern.test(optionsText);
+  const tokens = parseEffectiveTokens(effectiveConfigText, optionsText);
+  let hasCookiesFile = false;
+  let hasCookiesBrowser = false;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (token === '--cookies') {
+      hasCookiesFile = true;
+      index += 1;
+    } else if (token.startsWith('--cookies=')) {
+      hasCookiesFile = true;
+    } else if (token === '--no-cookies') {
+      hasCookiesFile = false;
+    } else if (token === '--cookies-from-browser') {
+      hasCookiesBrowser = true;
+      index += 1;
+    } else if (token.startsWith('--cookies-from-browser=')) {
+      hasCookiesBrowser = true;
+    } else if (token === '--no-cookies-from-browser') {
+      hasCookiesBrowser = false;
+    }
+  }
+
+  return hasCookiesFile || hasCookiesBrowser;
 }
 
 /**

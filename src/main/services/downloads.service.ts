@@ -332,6 +332,7 @@ export class DownloadsService implements OnModuleDestroy {
 
   /** Запускает процесс yt-dlp для задачи и при ошибке решателя n-challenge повторяет его без cookies. */
   private spawnTaskProcess(task: DownloadTask, ytdlpPath: string, baseArgs: string[]): void {
+    const attemptLogStartIndex = task.log.length;
     const args = [...baseArgs, ...this.buildTitlePrintArgs(baseArgs), task.url];
     const child = spawn(ytdlpPath, args, {
       cwd: task.downloadDir,
@@ -354,9 +355,7 @@ export class DownloadsService implements OnModuleDestroy {
       task.userMessage =
         'Не удалось запустить yt-dlp. Проверь установку приложения и доступность бинарника.';
       task.log.push(`Ошибка запуска yt-dlp: ${error.message}`);
-      this.retriedWithoutCookiesTaskIds.delete(task.id);
-      this.activeTaskIds.delete(task.id);
-      this.activeChildren.delete(task.id);
+      this.cleanupActiveTask(task.id);
       this.emitQueueUpdate(task);
       this.startNext();
     });
@@ -368,7 +367,13 @@ export class DownloadsService implements OnModuleDestroy {
         return;
       }
 
-      if (task.status !== 'failed' && code !== 0 && this.shouldRetryWithoutCookies(task)) {
+      const attemptLogText = task.log.slice(attemptLogStartIndex).join('\n');
+
+      if (
+        task.status !== 'failed' &&
+        code !== 0 &&
+        this.shouldRetryWithoutCookies(task, attemptLogText)
+      ) {
         this.retriedWithoutCookiesTaskIds.add(task.id);
         task.ytdlpUpdateRecommended = true;
         task.userMessage = YTDLP_N_CHALLENGE_BYPASS_RUNNING_MESSAGE;
@@ -394,7 +399,7 @@ export class DownloadsService implements OnModuleDestroy {
             : 'Скачивание завершено.'
         );
       } else if (task.status !== 'failed') {
-        const failure = this.analyzeFailure(task);
+        const failure = this.analyzeFailure(attemptLogText);
         task.status = 'failed';
         task.exitCode = code;
         task.finishedAt = Date.now();
@@ -402,9 +407,7 @@ export class DownloadsService implements OnModuleDestroy {
         task.log.push(`yt-dlp завершился с кодом ${code}.`);
       }
 
-      this.retriedWithoutCookiesTaskIds.delete(task.id);
-      this.activeTaskIds.delete(task.id);
-      this.activeChildren.delete(task.id);
+      this.cleanupActiveTask(task.id);
       this.emitQueueUpdate(task);
       if (isUnresolvedTaskTitle(task)) {
         this.enqueueTitleResolution(task.url);
@@ -413,14 +416,20 @@ export class DownloadsService implements OnModuleDestroy {
     });
   }
 
-  private shouldRetryWithoutCookies(task: DownloadTask): boolean {
+  private cleanupActiveTask(taskId: string): void {
+    this.retriedWithoutCookiesTaskIds.delete(taskId);
+    this.activeTaskIds.delete(taskId);
+    this.activeChildren.delete(taskId);
+  }
+
+  private shouldRetryWithoutCookies(task: DownloadTask, attemptLogText: string): boolean {
     if (this.retriedWithoutCookiesTaskIds.has(task.id)) {
       return false;
     }
 
     return (
       hasCookieConfiguration(task.effectiveConfigText, task.optionsText) &&
-      isYoutubeNChallengeDisposeError(task.log.join('\n'))
+      isYoutubeNChallengeDisposeError(attemptLogText)
     );
   }
 
@@ -501,9 +510,7 @@ export class DownloadsService implements OnModuleDestroy {
     ];
   }
 
-  private analyzeFailure(task: DownloadTask): FailureDetails {
-    const logText = task.log.join('\n');
-
+  private analyzeFailure(logText: string): FailureDetails {
     if (
       /n challenge solving failed/i.test(logText) ||
       /Only images are available for download/i.test(logText) ||

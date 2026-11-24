@@ -6,7 +6,7 @@ import { URL } from 'node:url';
 const { buildNoCookiesBypassArgs, hasCookieConfiguration, isYoutubeNChallengeDisposeError } =
   await import('../src/shared/youtube-n-challenge.ts');
 
-test('распознаёт ошибку решателя n-challenge с addOnDisposeCallback и без него', () => {
+test('распознаёт только ошибку решателя n-challenge с addOnDisposeCallback и не срабатывает на другие сбои', () => {
   const realErrorLog = [
     'WARNING: [youtube] [jsc] Error solving n challenge request using "deno" provider: Error running deno process (returncode: 1): error: Uncaught (in promise) TypeError: a.addOnDisposeCallback is not a function',
     'WARNING: [youtube] up-PYDgqFtc: n challenge solving failed: Some formats may be missing.',
@@ -16,25 +16,25 @@ test('распознаёт ошибку решателя n-challenge с addOnDis
 
   assert.equal(isYoutubeNChallengeDisposeError(realErrorLog), true);
 
-  const genericSolverCrashLog = [
-    'WARNING: [youtube] [jsc] Error solving n challenge request using "deno" provider: Error running deno process',
+  const denoTimeoutLog = [
+    'WARNING: [youtube] [jsc] Error solving n challenge request using "deno" provider: Error running deno process: timed out',
     'ERROR: [youtube] up-PYDgqFtc: Requested format is not available.'
   ].join('\n');
 
-  assert.equal(isYoutubeNChallengeDisposeError(genericSolverCrashLog), true);
+  assert.equal(isYoutubeNChallengeDisposeError(denoTimeoutLog), false);
 
-  const missingRuntimeLog = [
-    'WARNING: [youtube] No supported JavaScript runtime could be found.',
-    'WARNING: [youtube] up-PYDgqFtc: n challenge solving failed: Some formats may be missing.'
+  const filenameCollisionLog = [
+    '[download] Destination: /tmp/addOnDisposeCallback is not a function.mp4',
+    'ERROR: [youtube] up-PYDgqFtc: Requested format is not available.'
   ].join('\n');
 
-  assert.equal(isYoutubeNChallengeDisposeError(missingRuntimeLog), false);
+  assert.equal(isYoutubeNChallengeDisposeError(filenameCollisionLog), false);
 });
 
-test('определяет наличие cookies в эффективном конфиге или аргументах запуска', () => {
+test('определяет активные cookies с учётом кавычек, комментариев и переопределений --no-cookies', () => {
   assert.equal(
     hasCookieConfiguration(
-      '--js-runtimes "deno:/opt/homebrew/bin/deno"\n--cookies-from-browser "firefox:/Users/test/Zen"',
+      '--js-runtimes "deno:/opt/homebrew/bin/deno"\n"--cookies-from-browser" "firefox:/Users/test/Zen"',
       '--config-locations /tmp/cfg.conf'
     ),
     true
@@ -42,9 +42,14 @@ test('определяет наличие cookies в эффективном ко
   assert.equal(hasCookieConfiguration('', '--cookies /tmp/cookies.txt'), true);
   assert.equal(hasCookieConfiguration('--cookies=/tmp/cookies.txt', ''), true);
   assert.equal(
-    hasCookieConfiguration('--no-cookies\n--no-cookies-from-browser', '--no-cookies'),
+    hasCookieConfiguration('# --cookies /tmp/cookies.txt\n; --cookies-from-browser firefox', ''),
     false
   );
+  assert.equal(
+    hasCookieConfiguration('--cookies-from-browser firefox', '--no-cookies-from-browser'),
+    false
+  );
+  assert.equal(hasCookieConfiguration('--cookies /tmp/cookies.txt', '--no-cookies'), false);
 });
 
 test('удаляет флаги cookies и добавляет --no-cookies и --no-cookies-from-browser для обхода', () => {
@@ -74,24 +79,24 @@ test('удаляет флаги cookies и добавляет --no-cookies и --
   );
 });
 
-test('DownloadsService автоматически запускает обход без cookies и сохраняет предупреждение об обновлении yt-dlp', async () => {
+test('DownloadsService изолирует лог текущей попытки при автоповторе и анализе ошибки', async () => {
   const downloadsService = await readFile(
     new URL('../src/main/services/downloads.service.ts', import.meta.url),
     'utf8'
   );
 
-  assert.match(downloadsService, /isYoutubeNChallengeDisposeError/);
-  assert.match(downloadsService, /hasCookieConfiguration/);
-  assert.match(downloadsService, /buildNoCookiesBypassArgs/);
-  assert.match(downloadsService, /ytdlpUpdateRecommended\s*=\s*true/);
-  assert.match(downloadsService, /retriedWithoutCookiesTaskIds/);
+  assert.match(downloadsService, /attemptLogStartIndex\s*=\s*task\.log\.length/);
+  assert.match(downloadsService, /task\.log\.slice\(attemptLogStartIndex\)\.join\('\\n'\)/);
+  assert.match(downloadsService, /this\.analyzeFailure\(attemptLogText\)/);
+  assert.match(downloadsService, /this\.shouldRetryWithoutCookies\(task,\s*attemptLogText\)/);
+  assert.match(downloadsService, /cleanupActiveTask/);
 });
 
-test('UI показывает предупреждение об обновлении yt-dlp со ссылкой на секцию обновления в настройках', async () => {
+test('UI переиспользует общий каркас панели рекомендаций и прокручивает к настройке yt-dlp', async () => {
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
-  assert.match(renderer, /renderYtdlpUpdateRecommendation/);
-  assert.match(renderer, /ytdlpUpdateRecommended/);
+  assert.match(renderer, /function renderRecommendationPanel\(/);
+  assert.match(renderer, /function renderYtdlpUpdateRecommendation\(/);
   assert.match(renderer, /id="settings-ytdlp-binary"/);
-  assert.match(renderer, /scrollIntoView/);
+  assert.match(renderer, /document\.getElementById\('settings-ytdlp-binary'\)\?\.scrollIntoView/);
 });
