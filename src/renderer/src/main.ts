@@ -1194,8 +1194,41 @@ function renderTaskLog(task: DownloadTask): string {
       )}</pre>
       <button class="task-action task-log-jump" data-scroll-task-log="${task.id}" type="button" hidden>К последним строкам</button>
     </div>
+    ${renderYtdlpUpdateRecommendation(task)}
     ${renderHttp403Recommendations(task)}
   `;
+}
+
+/** Общий каркас панели рекомендаций в деталях задачи. */
+function renderRecommendationPanel(
+  ariaLabel: string,
+  title: string,
+  description: string,
+  actionsMarkup: string
+): string {
+  return `
+    <section class="http-403-recommendations" aria-label="${escapeHtml(ariaLabel)}">
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(description)}</p>
+      <div class="task-actions">
+        ${actionsMarkup}
+      </div>
+    </section>
+  `;
+}
+
+/** Показывает предупреждение об обновлении yt-dlp после автообхода ошибки YouTube n-challenge. */
+function renderYtdlpUpdateRecommendation(task: DownloadTask): string {
+  if (!task.ytdlpUpdateRecommended) {
+    return '';
+  }
+
+  return renderRecommendationPanel(
+    'Предупреждение об обновлении yt-dlp',
+    'Стоит обновить yt-dlp',
+    'Обнаружена ошибка YouTube n-challenge при работе с cookies — для задачи запущен автоматический обход без cookies. Обнови yt-dlp до версии 2026.11.23 или новее, чтобы скачивание с cookies снова работало.',
+    '<button class="task-action" data-recommend-403-update type="button">Перейти к обновлению yt-dlp в настройках</button>'
+  );
 }
 
 /** Показывает безопасные следующие шаги только для задачи, завершившейся отказом HTTP 403. */
@@ -1204,18 +1237,17 @@ function renderHttp403Recommendations(task: DownloadTask): string {
     return '';
   }
 
-  return `
-    <section class="http-403-recommendations" aria-label="Рекомендации по HTTP 403">
-      <h3>Как исправить HTTP 403</h3>
-      <p>Попробуй один шаг, затем повтори задачу: так будет понятно, какая настройка помогла.</p>
-      <div class="task-actions">
+  return renderRecommendationPanel(
+    'Рекомендации по HTTP 403',
+    'Как исправить HTTP 403',
+    'Попробуй один шаг, затем повтори задачу: так будет понятно, какая настройка помогла.',
+    `
         <button class="task-action" data-recommend-403-cookies="${task.id}" type="button">Настроить cookies</button>
         <button class="task-action" data-recommend-403-throttle="${task.id}" type="button">Снизить частоту и повторить</button>
         <button class="task-action" data-recommend-403-network type="button">Проверить сеть или proxy</button>
         <button class="task-action" data-recommend-403-update type="button">Обновить yt-dlp</button>
-      </div>
-    </section>
-  `;
+      `
+  );
 }
 
 /** Определяет, должен ли открытый журнал следовать за новыми строками. */
@@ -1813,7 +1845,7 @@ function renderSettingsUiPanel(): string {
 
   const ytdlpBinarySectionMarkup = showYtdlpBinarySection
     ? `
-      <section class="panel settings-panel settings-list-panel">
+      <section class="panel settings-panel settings-list-panel" id="settings-ytdlp-binary">
         <div class="section-head">
           <h2>Бинарник yt-dlp</h2>
           <span>поиск и установка</span>
@@ -2284,6 +2316,7 @@ function renderTaskActions(task: DownloadTask): string {
       <button class="task-action" data-open-log="${task.id}" type="button">Лог</button>
       ${canCancel ? `<button class="task-action danger-action" data-cancel-task="${task.id}" type="button">Отменить</button>` : ''}
       ${!canCancel ? `<button class="task-action" data-retry-task="${task.id}" type="button">Снова</button>` : ''}
+      ${task.ytdlpUpdateRecommended ? '<button class="task-action" data-recommend-403-update type="button">Обновить yt-dlp</button>' : ''}
       <button class="task-action danger-action" data-remove-task="${task.id}" type="button">Удалить</button>
     </div>
   `;
@@ -4132,6 +4165,7 @@ function openHttp403UpdateRecommendation(): void {
   settingsSearchQuery = 'Бинарник yt-dlp';
   settingsMessage = 'Выбери файл yt-dlp, обнови его и затем повтори задачу.';
   render();
+  document.getElementById('settings-ytdlp-binary')?.scrollIntoView({ block: 'start' });
 }
 
 /** Отменяет задачу через main-процесс и показывает её финальный статус в очереди. */
