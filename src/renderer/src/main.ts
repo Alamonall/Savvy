@@ -8,7 +8,8 @@ import type {
   ReleaseChange,
   YtdlpBinaryCandidate,
   YtdlpBinaryInfo,
-  YtdlpReleaseChannel
+  YtdlpReleaseChannel,
+  YtdlpUpdateProgress
 } from '../../shared/types';
 import {
   COOKIES_BROWSERS,
@@ -19,6 +20,7 @@ import {
 import { filterVisibleTasks } from '../../shared/task-activity';
 import { filterTasksBySearch, normalizeSearchQuery } from '../../shared/task-search';
 import { getYoutubeOembedUrl, parseOembedTitle } from '../../shared/task-title';
+import { isYtdlpUpdateAvailable } from '../../shared/ytdlp-version';
 import './styles.css';
 
 type Tab = 'queue' | 'settings';
@@ -121,6 +123,11 @@ let ytdlpCandidates: YtdlpBinaryCandidate[] = [];
 let isYtdlpUpdateInProgress = false;
 let isYtdlpLatestReleaseCheckInProgress = false;
 let ytdlpLatestReleaseVersion: string | null = null;
+let ytdlpUpdateProgress: YtdlpUpdateProgress = {
+  stage: 'idle',
+  percent: null,
+  message: null
+};
 let effectiveOptionsPreview = '';
 let effectiveConfigText = '';
 let textConfigDraft: string | null = null;
@@ -1105,6 +1112,9 @@ function installBrowserPreviewApi(): void {
       return () => {
         applicationUpdateListeners.delete(callback);
       };
+    },
+    onYtdlpUpdateProgress() {
+      return () => {};
     }
   };
 }
@@ -2652,6 +2662,60 @@ function getApplicationUpdateStage(): ApplicationUpdateStage {
 }
 
 /**
+ * Показывает в topbar кнопку обновления yt-dlp с прогрессом, если опубликованный релиз
+ * выбранного канала новее установленного бинарника или обновление выполняется.
+ */
+function renderYtdlpUpdateBadge(): string {
+  const hasUpdate = isYtdlpUpdateAvailable(ytdlpBinaryInfo.version, ytdlpLatestReleaseVersion);
+  const stage = ytdlpUpdateProgress.stage;
+  if (!hasUpdate && stage !== 'updating' && stage !== 'error') {
+    return '';
+  }
+
+  const currentVersion = ytdlpBinaryInfo.version ?? '';
+  const latestVersion = ytdlpLatestReleaseVersion ?? '';
+  const isUpdating = stage === 'updating';
+  const percent = ytdlpUpdateProgress.percent;
+  const percentValue = percent === null ? null : Math.min(100, Math.max(0, Math.round(percent)));
+  const actionLabel = isUpdating
+    ? percentValue === null
+      ? 'Обновление…'
+      : `Обновление ${percentValue}%`
+    : stage === 'error'
+      ? 'Повторить'
+      : 'Обновить';
+  const ariaLabel = isUpdating
+    ? `Обновление yt-dlp${percentValue === null ? '' : ` ${percentValue}%`}`
+    : stage === 'error'
+      ? 'Повторить обновление yt-dlp'
+      : `Обновить yt-dlp до версии ${latestVersion}`;
+  const tooltipText =
+    stage === 'error' && ytdlpUpdateProgress.message
+      ? ytdlpUpdateProgress.message
+      : isUpdating
+        ? `Идёт обновление yt-dlp (${settings.ytdlpReleaseChannel})${percentValue === null ? '…' : `: ${percentValue}%`}`
+        : `Доступна новая версия yt-dlp (${settings.ytdlpReleaseChannel}). Нажмите, чтобы обновить.`;
+  const progressBar = isUpdating
+    ? `<span class="ytdlp-update-progress${percentValue === null ? ' is-indeterminate' : ''}" aria-hidden="true"><span class="ytdlp-update-progress-fill" style="width: ${percentValue ?? 40}%"></span></span>`
+    : '';
+
+  return `
+    <div class="ytdlp-update">
+      <button class="ghost bordered ytdlp-update-button" data-ytdlp-update data-ytdlp-stage="${stage}" type="button" aria-label="${escapeHtml(ariaLabel)}" aria-describedby="ytdlp-update-tooltip" ${isUpdating ? 'disabled' : ''}>
+        <span class="ytdlp-update-dot" aria-hidden="true"></span>
+        <span>yt-dlp ${escapeHtml(latestVersion || currentVersion)}</span>
+        <span class="ytdlp-update-action">${escapeHtml(actionLabel)}</span>
+        ${progressBar}
+      </button>
+      <div class="application-update-tooltip ytdlp-update-tooltip" id="ytdlp-update-tooltip" role="tooltip">
+        <strong>yt-dlp: ${escapeHtml(currentVersion)} → ${escapeHtml(latestVersion || 'новая')}</strong>
+        <p>${escapeHtml(tooltipText)}</p>
+      </div>
+    </div>
+  `;
+}
+
+/**
  * Рендерит иконку обновления в topbar: этап передаётся цветом, знаком и кольцом прогресса,
  * а текст доступен только через aria-label и подсказку. Без найденного обновления иконка
  * запускает проверку.
@@ -2860,6 +2924,7 @@ function render(): void {
           </div>
         </div>
         <div class="topbar-actions">
+          ${renderYtdlpUpdateBadge()}
           ${renderApplicationUpdateButton()}
           <button class="ghost bordered theme-toggle" data-toggle-theme type="button" title="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}" aria-label="${theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}">${theme === 'dark' ? '☀' : '☾'}</button>
           <nav class="tabs" aria-label="Разделы">
@@ -3188,6 +3253,22 @@ async function refreshYtdlpBinaryInfo(): Promise<void> {
   ytdlpBinaryInfo = await window.ytdlp.getYtdlpBinaryInfo();
 }
 
+/** Фоново проверяет наличие новой версии yt-dlp без показа ошибок пользователю. */
+async function checkYtdlpLatestReleaseInBackground(): Promise<void> {
+  if (!ytdlpBinaryInfo.version) {
+    return;
+  }
+
+  try {
+    ytdlpLatestReleaseVersion = await window.ytdlp.getYtdlpLatestRelease(
+      settings.ytdlpReleaseChannel
+    );
+    render();
+  } catch {
+    // Фоновая проверка не должна мешать работе при отсутствии сети или лимитах GitHub.
+  }
+}
+
 /** Запрашивает опубликованную версию выбранного канала, не изменяя установленный бинарник. */
 async function checkYtdlpLatestRelease(): Promise<void> {
   isYtdlpLatestReleaseCheckInProgress = true;
@@ -3242,6 +3323,7 @@ async function installYtdlpBinary(channel: YtdlpReleaseChannel): Promise<void> {
 
     await updateLocalSettings({ ytdlpPath: binaryInfo.path, ytdlpReleaseChannel: channel });
     ytdlpBinaryInfo = binaryInfo;
+    ytdlpLatestReleaseVersion = binaryInfo.version;
     settingsMessage = `Установлен официальный ${channel}-бинарник yt-dlp версии ${binaryInfo.version || 'не определена'}.`;
   } catch (error) {
     settingsMessage = error instanceof Error ? error.message : 'Не удалось установить yt-dlp.';
@@ -3527,6 +3609,12 @@ function bindEvents(): void {
       render();
     });
   });
+
+  document
+    .querySelector<HTMLButtonElement>('[data-ytdlp-update]')
+    ?.addEventListener('click', () => {
+      void startYtdlpUpdateFromMain();
+    });
 
   document
     .querySelector<HTMLButtonElement>('[data-application-update]')
@@ -4158,14 +4246,54 @@ function openHttp403NetworkRecommendation(): void {
   render();
 }
 
-/** Открывает управление выбранным бинарником для обновления без изменения способа его установки. */
-function openHttp403UpdateRecommendation(): void {
+/** Обновляет yt-dlp прямо с главной страницы с отображением прогресса. */
+async function startYtdlpUpdateFromMain(): Promise<void> {
+  if (ytdlpUpdateProgress.stage === 'updating' || isYtdlpUpdateInProgress) {
+    return;
+  }
+
+  isYtdlpUpdateInProgress = true;
+  ytdlpUpdateProgress = { stage: 'updating', percent: 0, message: null };
+  render();
+
+  try {
+    if (settings.ytdlpPath) {
+      ytdlpBinaryInfo = await window.ytdlp.updateYtdlpBinary();
+    } else {
+      const binaryInfo = await window.ytdlp.installYtdlpBinary(settings.ytdlpReleaseChannel);
+      if (!binaryInfo.path) {
+        throw new Error('После установки путь к yt-dlp не определён.');
+      }
+      await updateLocalSettings({ ytdlpPath: binaryInfo.path });
+      ytdlpBinaryInfo = binaryInfo;
+    }
+
+    ytdlpLatestReleaseVersion = ytdlpBinaryInfo.version;
+    ytdlpUpdateProgress = { stage: 'idle', percent: null, message: null };
+    settingsMessage = `yt-dlp обновлён до версии ${ytdlpBinaryInfo.version || 'не определена'}.`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Не удалось обновить yt-dlp.';
+    ytdlpUpdateProgress = { stage: 'error', percent: null, message };
+    settingsMessage = message;
+  } finally {
+    isYtdlpUpdateInProgress = false;
+    render();
+  }
+}
+
+/** Открывает секцию бинарника yt-dlp в настройках с опциональным сообщением. */
+function openYtdlpBinarySettings(message: string | null): void {
   currentTab = 'settings';
   settingsMode = 'ui';
   settingsSearchQuery = 'Бинарник yt-dlp';
-  settingsMessage = 'Выбери файл yt-dlp, обнови его и затем повтори задачу.';
+  settingsMessage = message;
   render();
   document.getElementById('settings-ytdlp-binary')?.scrollIntoView({ block: 'start' });
+}
+
+/** Открывает управление выбранным бинарником для обновления без изменения способа его установки. */
+function openHttp403UpdateRecommendation(): void {
+  openYtdlpBinarySettings('Выбери файл yt-dlp, обнови его и затем повтори задачу.');
 }
 
 /** Отменяет задачу через main-процесс и показывает её финальный статус в очереди. */
@@ -4259,6 +4387,11 @@ window.ytdlp.onApplicationUpdate((update) => {
   render();
 });
 
+window.ytdlp.onYtdlpUpdateProgress((progress) => {
+  ytdlpUpdateProgress = progress;
+  render();
+});
+
 applyTheme();
 render();
 
@@ -4285,6 +4418,7 @@ async function initializeApp(): Promise<void> {
   }
 
   render();
+  void checkYtdlpLatestReleaseInBackground();
 }
 
 void initializeApp();

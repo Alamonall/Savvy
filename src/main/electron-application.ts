@@ -61,6 +61,9 @@ export class ElectronApplication {
     this.services.applicationUpdater.setUpdateSender((update) => {
       this.mainWindow?.webContents.send('application-update:update', update);
     });
+    this.services.binaryLocator.setUpdateProgressSender((progress) => {
+      this.mainWindow?.webContents.send('ytdlp-update:progress', progress);
+    });
 
     this.registerIpcHandlers();
     this.setDockIcon();
