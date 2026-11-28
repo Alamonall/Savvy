@@ -6,7 +6,8 @@ import type {
   AppSettings,
   DownloadUpdate,
   YtdlpApi,
-  YtdlpReleaseChannel
+  YtdlpReleaseChannel,
+  YtdlpUpdateProgress
 } from '../shared/types';
 
 const require = createRequire(import.meta.url);
@@ -118,6 +119,17 @@ const api: YtdlpApi = {
 
     return () => {
       ipcRenderer.off('application-update:update', listener);
+    };
+  },
+  onYtdlpUpdateProgress(callback: (progress: YtdlpUpdateProgress) => void) {
+    const listener = (_event: IpcRendererEvent, progress: YtdlpUpdateProgress): void => {
+      callback(progress);
+    };
+
+    ipcRenderer.on('ytdlp-update:progress', listener);
+
+    return () => {
+      ipcRenderer.off('ytdlp-update:progress', listener);
     };
   }
 };

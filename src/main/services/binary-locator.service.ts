@@ -9,7 +9,8 @@ import { promisify } from 'node:util';
 import type {
   YtdlpBinaryCandidate,
   YtdlpBinaryInfo,
-  YtdlpReleaseChannel
+  YtdlpReleaseChannel,
+  YtdlpUpdateProgress
 } from '../../shared/types';
 
 const require = createRequire(import.meta.url);
@@ -27,6 +28,16 @@ type GithubRelease = {
 @Injectable()
 export class BinaryLocatorService {
   private readonly resolvedFfmpegPath = this.resolveBinaryPath('ffmpeg');
+  private updateProgressSender: ((progress: YtdlpUpdateProgress) => void) | null = null;
+
+  /** Регистрирует обработчик прогресса скачивания и обновления бинарника yt-dlp. */
+  setUpdateProgressSender(sender: (progress: YtdlpUpdateProgress) => void): void {
+    this.updateProgressSender = sender;
+  }
+
+  private emitUpdateProgress(progress: YtdlpUpdateProgress): void {
+    this.updateProgressSender?.(progress);
+  }
 
   /**
    * Возвращает выбранный пользователем исполняемый файл yt-dlp либо найденный автоматически.
@@ -84,14 +95,19 @@ export class BinaryLocatorService {
       return this.installYtdlpBinary(channel);
     }
 
+    this.emitUpdateProgress({ stage: 'updating', percent: null, message: null });
     try {
       await this.runYtdlp(ytdlpPath, ['-U']);
     } catch (error) {
       const details = error instanceof Error ? error.message : 'неизвестная ошибка';
-      throw new Error(this.getManualUpdateInstructions(details));
+      const instructions = this.getManualUpdateInstructions(details);
+      this.emitUpdateProgress({ stage: 'error', percent: null, message: instructions });
+      throw new Error(instructions);
     }
 
-    return this.getYtdlpBinaryInfo(selectedPath);
+    const updatedInfo = await this.getYtdlpBinaryInfo(selectedPath);
+    this.emitUpdateProgress({ stage: 'done', percent: 100, message: null });
+    return updatedInfo;
   }
 
   /** Находит доступные исполняемые yt-dlp и показывает версию каждого кандидата. */
@@ -142,30 +158,47 @@ export class BinaryLocatorService {
    * Файл заменяется только после успешной проверки контрольной суммы.
    */
   async installYtdlpBinary(channel: YtdlpReleaseChannel): Promise<YtdlpBinaryInfo> {
-    const { asset, fileName } = this.getReleaseAsset();
-    const repository = RELEASE_REPOSITORIES[channel];
-    const releaseBaseUrl = `https://github.com/${repository}/releases/latest/download`;
-    const [binaryResponse, checksumResponse] = await Promise.all([
-      fetch(`${releaseBaseUrl}/${asset}`),
-      fetch(`${releaseBaseUrl}/SHA2-256SUMS`)
-    ]);
+    this.emitUpdateProgress({ stage: 'updating', percent: 0, message: null });
 
-    if (!binaryResponse.ok || !checksumResponse.ok) {
-      throw new Error(
-        `Не удалось скачать официальный yt-dlp: бинарник HTTP ${binaryResponse.status}, checksum HTTP ${checksumResponse.status}.`
-      );
+    try {
+      const { asset, fileName } = this.getReleaseAsset();
+      const repository = RELEASE_REPOSITORIES[channel];
+      const releaseBaseUrl = `https://github.com/${repository}/releases/latest/download`;
+      const [binaryResponse, checksumResponse] = await Promise.all([
+        fetch(`${releaseBaseUrl}/${asset}`),
+        fetch(`${releaseBaseUrl}/SHA2-256SUMS`)
+      ]);
+
+      if (!binaryResponse.ok || !checksumResponse.ok) {
+        throw new Error(
+          `Не удалось скачать официальный yt-dlp: бинарник HTTP ${binaryResponse.status}, checksum HTTP ${checksumResponse.status}.`
+        );
+      }
+
+      const binary = await this.downloadBinaryWithProgress(binaryResponse);
+      this.emitUpdateProgress({ stage: 'updating', percent: 100, message: null });
+      this.verifyChecksum(asset, binary, await checksumResponse.text());
+
+      const targetDirectory = join(app.getPath('userData'), 'bin');
+      const targetPath = join(targetDirectory, fileName);
+      await this.saveVerifiedBinary(targetDirectory, targetPath, binary);
+
+      const installedInfo = await this.getYtdlpBinaryInfo(targetPath);
+      this.emitUpdateProgress({ stage: 'done', percent: 100, message: null });
+      return installedInfo;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось установить yt-dlp.';
+      this.emitUpdateProgress({ stage: 'error', percent: null, message });
+      throw error;
     }
+  }
 
-    const binary = Buffer.from(await binaryResponse.arrayBuffer());
-    if (binary.length > MAX_MANAGED_BINARY_SIZE_BYTES) {
-      throw new Error(
-        'Размер скачанного yt-dlp превышает допустимый предел. Текущий бинарник не изменён.'
-      );
-    }
-    this.verifyChecksum(asset, binary, await checksumResponse.text());
-
-    const targetDirectory = join(app.getPath('userData'), 'bin');
-    const targetPath = join(targetDirectory, fileName);
+  /** Атомарно сохраняет проверенный бинарник yt-dlp в целевой каталог. */
+  private async saveVerifiedBinary(
+    targetDirectory: string,
+    targetPath: string,
+    binary: Buffer
+  ): Promise<void> {
     const temporaryPath = `${targetPath}.${crypto.randomUUID()}.download`;
     await mkdir(targetDirectory, { recursive: true });
     await writeFile(temporaryPath, binary, { mode: 0o755 });
@@ -185,8 +218,56 @@ export class BinaryLocatorService {
         `Не удалось сохранить проверенный yt-dlp: ${error instanceof Error ? error.message : 'неизвестная ошибка'}`
       );
     }
+  }
 
-    return this.getYtdlpBinaryInfo(targetPath);
+  /** Скачивает бинарник потоково с проверкой размера и отправкой процентов прогресса. */
+  private async downloadBinaryWithProgress(binaryResponse: Response): Promise<Buffer> {
+    const reader = binaryResponse.body?.getReader();
+    if (!reader) {
+      const binary = Buffer.from(await binaryResponse.arrayBuffer());
+      if (binary.length > MAX_MANAGED_BINARY_SIZE_BYTES) {
+        throw new Error(
+          'Размер скачанного yt-dlp превышает допустимый предел. Текущий бинарник не изменён.'
+        );
+      }
+      return binary;
+    }
+
+    const contentLengthHeader = binaryResponse.headers.get('content-length');
+    const totalBytes = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : 0;
+    const chunks: Uint8Array[] = [];
+    let receivedBytes = 0;
+    let lastReportedPercent = -1;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        receivedBytes += value.byteLength;
+        if (receivedBytes > MAX_MANAGED_BINARY_SIZE_BYTES) {
+          await reader.cancel();
+          throw new Error(
+            'Размер скачанного yt-dlp превышает допустимый предел. Текущий бинарник не изменён.'
+          );
+        }
+        chunks.push(value);
+
+        if (Number.isFinite(totalBytes) && totalBytes > 0) {
+          const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+          if (percent !== lastReportedPercent) {
+            lastReportedPercent = percent;
+            this.emitUpdateProgress({ stage: 'updating', percent, message: null });
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return Buffer.concat(chunks);
   }
 
   getFfmpegDirectory(): string | null {

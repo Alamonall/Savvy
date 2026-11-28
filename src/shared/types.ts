@@ -98,6 +98,14 @@ export interface YtdlpBinaryInfo {
 
 export type YtdlpReleaseChannel = 'stable' | 'nightly';
 
+export type YtdlpUpdateStage = 'idle' | 'updating' | 'done' | 'error';
+
+export interface YtdlpUpdateProgress {
+  stage: YtdlpUpdateStage;
+  percent: number | null;
+  message: string | null;
+}
+
 export interface YtdlpBinaryCandidate extends YtdlpBinaryInfo {
   source: 'app-managed' | 'system';
 }
@@ -174,4 +182,5 @@ export interface YtdlpApi {
   ): Promise<void>;
   onQueueUpdate(callback: (update: DownloadUpdate) => void): () => void;
   onApplicationUpdate(callback: (update: ApplicationUpdateState) => void): () => void;
+  onYtdlpUpdateProgress(callback: (progress: YtdlpUpdateProgress) => void): () => void;
 }
