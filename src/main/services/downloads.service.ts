@@ -332,7 +332,7 @@ export class DownloadsService implements OnModuleDestroy {
 
   /** Запускает процесс yt-dlp для задачи и при ошибке решателя n-challenge повторяет его без cookies. */
   private spawnTaskProcess(task: DownloadTask, ytdlpPath: string, baseArgs: string[]): void {
-    const attemptLogStartIndex = task.log.length;
+    const attemptLogLines: string[] = [];
     const args = [...baseArgs, ...this.buildTitlePrintArgs(baseArgs), task.url];
     const child = spawn(ytdlpPath, args, {
       cwd: task.downloadDir,
@@ -340,11 +340,11 @@ export class DownloadsService implements OnModuleDestroy {
     });
     this.activeChildren.set(task.id, child);
 
-    child.stdout.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
-    child.stderr.on('data', (chunk: Buffer) => this.pushLog(task, chunk));
+    child.stdout.on('data', (chunk: Buffer) => this.pushLog(task, chunk, attemptLogLines));
+    child.stderr.on('data', (chunk: Buffer) => this.pushLog(task, chunk, attemptLogLines));
 
     child.on('error', (error) => {
-      this.flushPartialLogBuffer(task);
+      this.flushPartialLogBuffer(task, attemptLogLines);
       if (task.status === 'cancelled') {
         this.finishCancelledTask(task);
         return;
@@ -361,13 +361,13 @@ export class DownloadsService implements OnModuleDestroy {
     });
 
     child.on('close', (code) => {
-      this.flushPartialLogBuffer(task);
+      this.flushPartialLogBuffer(task, attemptLogLines);
       if (task.status === 'cancelled') {
         this.finishCancelledTask(task);
         return;
       }
 
-      const attemptLogText = task.log.slice(attemptLogStartIndex).join('\n');
+      const attemptLogText = attemptLogLines.join('\n');
 
       if (
         task.status !== 'failed' &&
@@ -539,7 +539,7 @@ export class DownloadsService implements OnModuleDestroy {
     };
   }
 
-  private pushLog(task: DownloadTask, chunk: Buffer): void {
+  private pushLog(task: DownloadTask, chunk: Buffer, attemptLogLines?: string[]): void {
     const buffered = (this.partialLogBuffers.get(task.id) ?? '') + chunk.toString('utf8');
     const parts = buffered.split(/\r?\n|\r/);
     const remainder = parts.pop() ?? '';
@@ -550,18 +550,18 @@ export class DownloadsService implements OnModuleDestroy {
       return;
     }
 
-    this.processLogLines(task, lines);
+    this.processLogLines(task, lines, attemptLogLines);
   }
 
-  private flushPartialLogBuffer(task: DownloadTask): void {
+  private flushPartialLogBuffer(task: DownloadTask, attemptLogLines?: string[]): void {
     const remainder = this.partialLogBuffers.get(task.id)?.trimEnd();
     this.partialLogBuffers.delete(task.id);
     if (remainder) {
-      this.processLogLines(task, [remainder]);
+      this.processLogLines(task, [remainder], attemptLogLines);
     }
   }
 
-  private processLogLines(task: DownloadTask, lines: string[]): void {
+  private processLogLines(task: DownloadTask, lines: string[], attemptLogLines?: string[]): void {
     const visibleLines: string[] = [];
     let titleUpdated = false;
 
@@ -602,6 +602,7 @@ export class DownloadsService implements OnModuleDestroy {
     }
 
     if (visibleLines.length) {
+      attemptLogLines?.push(...visibleLines);
       task.log.push(...visibleLines);
       task.log = task.log.slice(-300);
     }

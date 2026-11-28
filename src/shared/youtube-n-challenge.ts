@@ -22,12 +22,38 @@ function tokenizeArgsLine(line: string): string[] {
   return tokens;
 }
 
+/** Удаляет комментарий `# ...` вне кавычек из строки конфигурации yt-dlp. */
+function stripInlineConfigComment(line: string): string {
+  let quote: '"' | "'" | null = null;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (quote !== null) {
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (char === '#') {
+      return line.slice(0, index).trim();
+    }
+  }
+
+  return line.trim();
+}
+
 /** Разбирает конфиг yt-dlp (без комментариев) и аргументы запуска в плоский список токенов. */
 function parseEffectiveTokens(effectiveConfigText: string, optionsText: string): string[] {
   const configLines = effectiveConfigText
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith(';'));
+    .map((line) => stripInlineConfigComment(line))
+    .filter((line) => line.length > 0 && !line.startsWith(';'));
 
   const tokens: string[] = [];
   for (const line of configLines) {
