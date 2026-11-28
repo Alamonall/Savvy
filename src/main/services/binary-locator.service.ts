@@ -181,25 +181,7 @@ export class BinaryLocatorService {
 
       const targetDirectory = join(app.getPath('userData'), 'bin');
       const targetPath = join(targetDirectory, fileName);
-      const temporaryPath = `${targetPath}.${crypto.randomUUID()}.download`;
-      await mkdir(targetDirectory, { recursive: true });
-      await writeFile(temporaryPath, binary, { mode: 0o755 });
-
-      try {
-        if (process.platform !== 'win32') {
-          await chmod(temporaryPath, 0o755);
-        }
-        if (existsSync(targetPath)) {
-          await copyFile(temporaryPath, targetPath);
-          await rm(temporaryPath, { force: true });
-        } else {
-          await rename(temporaryPath, targetPath);
-        }
-      } catch (error) {
-        throw new Error(
-          `Не удалось сохранить проверенный yt-dlp: ${error instanceof Error ? error.message : 'неизвестная ошибка'}`
-        );
-      }
+      await this.saveVerifiedBinary(targetDirectory, targetPath, binary);
 
       const installedInfo = await this.getYtdlpBinaryInfo(targetPath);
       this.emitUpdateProgress({ stage: 'done', percent: 100, message: null });
@@ -208,6 +190,33 @@ export class BinaryLocatorService {
       const message = error instanceof Error ? error.message : 'Не удалось установить yt-dlp.';
       this.emitUpdateProgress({ stage: 'error', percent: null, message });
       throw error;
+    }
+  }
+
+  /** Атомарно сохраняет проверенный бинарник yt-dlp в целевой каталог. */
+  private async saveVerifiedBinary(
+    targetDirectory: string,
+    targetPath: string,
+    binary: Buffer
+  ): Promise<void> {
+    const temporaryPath = `${targetPath}.${crypto.randomUUID()}.download`;
+    await mkdir(targetDirectory, { recursive: true });
+    await writeFile(temporaryPath, binary, { mode: 0o755 });
+
+    try {
+      if (process.platform !== 'win32') {
+        await chmod(temporaryPath, 0o755);
+      }
+      if (existsSync(targetPath)) {
+        await copyFile(temporaryPath, targetPath);
+        await rm(temporaryPath, { force: true });
+      } else {
+        await rename(temporaryPath, targetPath);
+      }
+    } catch (error) {
+      throw new Error(
+        `Не удалось сохранить проверенный yt-dlp: ${error instanceof Error ? error.message : 'неизвестная ошибка'}`
+      );
     }
   }
 
@@ -230,28 +239,32 @@ export class BinaryLocatorService {
     let receivedBytes = 0;
     let lastReportedPercent = -1;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
 
-      receivedBytes += value.byteLength;
-      if (receivedBytes > MAX_MANAGED_BINARY_SIZE_BYTES) {
-        await reader.cancel();
-        throw new Error(
-          'Размер скачанного yt-dlp превышает допустимый предел. Текущий бинарник не изменён.'
-        );
-      }
-      chunks.push(value);
+        receivedBytes += value.byteLength;
+        if (receivedBytes > MAX_MANAGED_BINARY_SIZE_BYTES) {
+          await reader.cancel();
+          throw new Error(
+            'Размер скачанного yt-dlp превышает допустимый предел. Текущий бинарник не изменён.'
+          );
+        }
+        chunks.push(value);
 
-      if (Number.isFinite(totalBytes) && totalBytes > 0) {
-        const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
-        if (percent !== lastReportedPercent) {
-          lastReportedPercent = percent;
-          this.emitUpdateProgress({ stage: 'updating', percent, message: null });
+        if (Number.isFinite(totalBytes) && totalBytes > 0) {
+          const percent = Math.min(100, Math.round((receivedBytes / totalBytes) * 100));
+          if (percent !== lastReportedPercent) {
+            lastReportedPercent = percent;
+            this.emitUpdateProgress({ stage: 'updating', percent, message: null });
+          }
         }
       }
+    } finally {
+      reader.releaseLock();
     }
 
     return Buffer.concat(chunks);

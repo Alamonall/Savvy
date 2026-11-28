@@ -2661,6 +2661,48 @@ function getApplicationUpdateStage(): ApplicationUpdateStage {
   return isApplicationUpdateUpToDate ? 'up-to-date' : 'idle';
 }
 
+/** Формирует подписи кнопки и подсказки для текущего этапа обновления yt-dlp. */
+function getYtdlpUpdateBadgeCopy(
+  progress: YtdlpUpdateProgress,
+  latestVersion: string
+): {
+  actionLabel: string;
+  ariaLabel: string;
+  tooltipText: string;
+  percentValue: number | null;
+} {
+  const percentValue =
+    progress.percent === null ? null : getApplicationUpdatePercent(progress.percent);
+
+  if (progress.stage === 'updating') {
+    const suffix = percentValue === null ? '…' : `: ${percentValue}%`;
+    return {
+      actionLabel: percentValue === null ? 'Обновление…' : `Обновление ${percentValue}%`,
+      ariaLabel: `Обновление yt-dlp${percentValue === null ? '' : ` ${percentValue}%`}`,
+      tooltipText: `Идёт обновление yt-dlp (${settings.ytdlpReleaseChannel})${suffix}`,
+      percentValue
+    };
+  }
+
+  if (progress.stage === 'error') {
+    return {
+      actionLabel: 'Повторить',
+      ariaLabel: 'Повторить обновление yt-dlp',
+      tooltipText:
+        progress.message ??
+        `Не удалось обновить yt-dlp (${settings.ytdlpReleaseChannel}). Нажмите, чтобы повторить.`,
+      percentValue
+    };
+  }
+
+  return {
+    actionLabel: 'Обновить',
+    ariaLabel: `Обновить yt-dlp до версии ${latestVersion}`,
+    tooltipText: `Доступна новая версия yt-dlp (${settings.ytdlpReleaseChannel}). Нажмите, чтобы обновить.`,
+    percentValue
+  };
+}
+
 /**
  * Показывает в topbar кнопку обновления yt-dlp с прогрессом, если опубликованный релиз
  * выбранного канала новее установленного бинарника или обновление выполняется.
@@ -2668,33 +2710,17 @@ function getApplicationUpdateStage(): ApplicationUpdateStage {
 function renderYtdlpUpdateBadge(): string {
   const hasUpdate = isYtdlpUpdateAvailable(ytdlpBinaryInfo.version, ytdlpLatestReleaseVersion);
   const stage = ytdlpUpdateProgress.stage;
-  if (!hasUpdate && stage !== 'updating' && stage !== 'error') {
+  if (!hasUpdate && stage !== 'updating') {
     return '';
   }
 
   const currentVersion = ytdlpBinaryInfo.version ?? '';
   const latestVersion = ytdlpLatestReleaseVersion ?? '';
   const isUpdating = stage === 'updating';
-  const percent = ytdlpUpdateProgress.percent;
-  const percentValue = percent === null ? null : Math.min(100, Math.max(0, Math.round(percent)));
-  const actionLabel = isUpdating
-    ? percentValue === null
-      ? 'Обновление…'
-      : `Обновление ${percentValue}%`
-    : stage === 'error'
-      ? 'Повторить'
-      : 'Обновить';
-  const ariaLabel = isUpdating
-    ? `Обновление yt-dlp${percentValue === null ? '' : ` ${percentValue}%`}`
-    : stage === 'error'
-      ? 'Повторить обновление yt-dlp'
-      : `Обновить yt-dlp до версии ${latestVersion}`;
-  const tooltipText =
-    stage === 'error' && ytdlpUpdateProgress.message
-      ? ytdlpUpdateProgress.message
-      : isUpdating
-        ? `Идёт обновление yt-dlp (${settings.ytdlpReleaseChannel})${percentValue === null ? '…' : `: ${percentValue}%`}`
-        : `Доступна новая версия yt-dlp (${settings.ytdlpReleaseChannel}). Нажмите, чтобы обновить.`;
+  const { actionLabel, ariaLabel, tooltipText, percentValue } = getYtdlpUpdateBadgeCopy(
+    ytdlpUpdateProgress,
+    latestVersion
+  );
   const progressBar = isUpdating
     ? `<span class="ytdlp-update-progress${percentValue === null ? ' is-indeterminate' : ''}" aria-hidden="true"><span class="ytdlp-update-progress-fill" style="width: ${percentValue ?? 40}%"></span></span>`
     : '';
