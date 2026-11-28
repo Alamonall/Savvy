@@ -50,6 +50,15 @@ test('определяет активные cookies с учётом кавыче
     false
   );
   assert.equal(hasCookieConfiguration('--cookies /tmp/cookies.txt', '--no-cookies'), false);
+  assert.equal(
+    hasCookieConfiguration('--cookies /tmp/cookies.txt # отключить через --no-cookies', ''),
+    true
+  );
+  assert.equal(
+    hasCookieConfiguration('--cookies "/tmp/my#cookies.txt" # комментарий', '--no-cookies'),
+    false
+  );
+  assert.equal(hasCookieConfiguration('--cookies "/tmp/my#cookies.txt" # --no-cookies', ''), true);
 });
 
 test('удаляет флаги cookies и добавляет --no-cookies и --no-cookies-from-browser для обхода', () => {
@@ -85,8 +94,10 @@ test('DownloadsService изолирует лог текущей попытки �
     'utf8'
   );
 
-  assert.match(downloadsService, /attemptLogStartIndex\s*=\s*task\.log\.length/);
-  assert.match(downloadsService, /task\.log\.slice\(attemptLogStartIndex\)\.join\('\\n'\)/);
+  assert.doesNotMatch(downloadsService, /attemptLogStartIndex/);
+  assert.match(downloadsService, /const attemptLogLines:\s*string\[\]\s*=\s*\[\]/);
+  assert.match(downloadsService, /attemptLogLines\?\.push\(\.\.\.visibleLines\)/);
+  assert.match(downloadsService, /const attemptLogText\s*=\s*attemptLogLines\.join\('\\n'\)/);
   assert.match(downloadsService, /this\.analyzeFailure\(attemptLogText\)/);
   assert.match(downloadsService, /this\.shouldRetryWithoutCookies\(task,\s*attemptLogText\)/);
   assert.match(downloadsService, /cleanupActiveTask/);
