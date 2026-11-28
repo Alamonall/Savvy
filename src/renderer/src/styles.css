@@ -1241,6 +1241,15 @@ label.settings-option {
   color: #344054;
 }
 
+.inherited-box .section-head {
+  padding: 0 0 10px;
+}
+
+.inherited-box .section-head strong {
+  margin-bottom: 0;
+  font-size: 14px;
+}
+
 .inherited-box ul {
   display: grid;
   gap: 4px;
@@ -1930,6 +1939,10 @@ label.settings-option {
 [data-theme='dark'] .options-preview {
   background: #111827;
   color: #d1d5db;
+}
+
+[data-theme='dark'] .inherited-box .section-head strong {
+  color: #f3f4f6;
 }
 
 [data-theme='dark'] .task-day-header {

@@ -143,15 +143,28 @@ async function isServerHealthy(baseUrl) {
   }
 }
 
+function buildSpawnEnv() {
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}
+
 function tryLaunchSavvy(discovery) {
   if (process.env.SAVVY_NO_AUTO_LAUNCH === '1') {
     return false;
   }
 
-  if (process.platform === 'darwin') {
-    const child = spawn('open', ['-g', '-a', 'Savvy'], {
+  const env = buildSpawnEnv();
+  const executablePath = discovery?.executablePath;
+  if (typeof executablePath === 'string' && existsSync(executablePath)) {
+    const args =
+      discovery?.isPackaged === false && typeof discovery?.appPath === 'string' && discovery.appPath
+        ? [discovery.appPath, '--headless']
+        : ['--headless'];
+    const child = spawn(executablePath, args, {
       detached: true,
-      stdio: 'ignore'
+      stdio: 'ignore',
+      env
     });
     child.on('error', (error) => {
       console.error(`Не удалось запустить Savvy: ${error.message}`);
@@ -160,11 +173,11 @@ function tryLaunchSavvy(discovery) {
     return true;
   }
 
-  const executablePath = discovery?.executablePath;
-  if (typeof executablePath === 'string' && existsSync(executablePath)) {
-    const child = spawn(executablePath, [], {
+  if (process.platform === 'darwin') {
+    const child = spawn('open', ['-g', '-a', 'Savvy', '--args', '--headless'], {
       detached: true,
-      stdio: 'ignore'
+      stdio: 'ignore',
+      env
     });
     child.on('error', (error) => {
       console.error(`Не удалось запустить Savvy: ${error.message}`);

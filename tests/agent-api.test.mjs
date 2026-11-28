@@ -528,12 +528,17 @@ test('настройки и IPC-контракт содержат API для И�
   const renderer = await readFile(new URL('../src/renderer/src/main.ts', import.meta.url), 'utf8');
 
   assert.match(sharedTypes, /export interface AgentApiStatus/);
+  assert.match(sharedTypes, /export type AgentMcpTarget = 'claude' \| 'codex' \| 'gemini';/);
+  assert.match(sharedTypes, /export interface InstallAgentMcpOptions/);
   assert.match(sharedTypes, /agentApiEnabled: boolean;/);
   assert.match(preload, /getAgentApiStatus\(\)/);
   assert.match(preload, /regenerateAgentApiToken\(\)/);
+  assert.match(preload, /installAgentMcpConfig\(options: InstallAgentMcpOptions\)/);
   assert.match(electronApp, /agent-api:get-status/);
   assert.match(electronApp, /agent-api:regenerate-token/);
+  assert.match(electronApp, /agent-api:install-mcp/);
   assert.match(renderer, /API для ИИ-агентов/);
+  assert.match(renderer, /claude/i);
   assert.match(renderer, /codex/i);
   assert.match(renderer, /gemini/i);
   assert.match(
@@ -541,7 +546,122 @@ test('настройки и IPC-контракт содержат API для И�
     /<label class="settings-option">\s*<input data-setting-checkbox="agentApiEnabled" type="checkbox"/
   );
   assert.match(renderer, /id="agent-api-status-box"/);
-  assert.match(renderer, /id="copy-codex-mcp-config"/);
-  assert.match(renderer, /id="copy-gemini-mcp-config"/);
+  assert.match(renderer, /id="mcp-binary-path-\$\{item\.target\}"/);
+  assert.match(renderer, /id="mcp-config-path-\$\{item\.target\}"/);
+  assert.match(renderer, /install-claude-mcp-config/);
+  assert.match(renderer, /install-codex-mcp-config/);
+  assert.match(renderer, /install-gemini-mcp-config/);
   assert.match(renderer, /id="regenerate-agent-api-token"/);
+});
+
+test('installAgentMcpConfigFile устанавливает и обновляет конфиги Claude, Codex и Gemini с кастомным бинарником и путём', async () => {
+  const { installAgentMcpConfigFile } = await import('../src/main/agent-mcp-config.ts');
+  const tempHome = await mkdtemp(join(tmpdir(), 'savvy-mcp-install-'));
+  const mcpScriptPath = '/opt/Savvy/resources/mcp/savvy-mcp.mjs';
+
+  try {
+    // 1. Claude: создаёт ~/.claude.json и обновляет Claude Desktop, если каталог существует
+    const desktopDir = join(tempHome, 'Library', 'Application Support', 'Claude');
+    await mkdir(desktopDir, { recursive: true });
+    await writeFile(
+      join(tempHome, '.claude.json'),
+      JSON.stringify({ theme: 'dark', mcpServers: { other: { command: 'npx', args: ['x'] } } }),
+      'utf8'
+    );
+
+    const claudeResult = installAgentMcpConfigFile({ target: 'claude' }, mcpScriptPath, {
+      homeDir: tempHome,
+      platform: 'darwin'
+    });
+    assert.deepEqual(claudeResult.configPaths, [
+      join(tempHome, '.claude.json'),
+      join(desktopDir, 'claude_desktop_config.json')
+    ]);
+    const claudeJson = JSON.parse(await readFile(join(tempHome, '.claude.json'), 'utf8'));
+    assert.equal(claudeJson.theme, 'dark');
+    assert.deepEqual(claudeJson.mcpServers.other, { command: 'npx', args: ['x'] });
+    assert.deepEqual(claudeJson.mcpServers.savvy, { command: 'node', args: [mcpScriptPath] });
+
+    // 2. Codex: добавляет и затем обновляет существующую секцию без потери других секций
+    const codexConfigPath = join(tempHome, '.codex', 'config.toml');
+    await mkdir(join(tempHome, '.codex'), { recursive: true });
+    await writeFile(
+      codexConfigPath,
+      'model = "gpt-5"\n\n[mcp_servers.savvy]\ncommand = "old-node"\nargs = ["/old.mjs"]\n\n[mcp_servers.other]\ncommand = "uvx"\n',
+      'utf8'
+    );
+
+    const codexResult = installAgentMcpConfigFile(
+      { target: 'codex', binaryPath: '/custom/bin/node' },
+      mcpScriptPath,
+      { homeDir: tempHome }
+    );
+    assert.deepEqual(codexResult.configPaths, [codexConfigPath]);
+    const codexToml = await readFile(codexConfigPath, 'utf8');
+    assert.match(codexToml, /model = "gpt-5"/);
+    assert.match(
+      codexToml,
+      /\[mcp_servers\.savvy\]\ncommand = "\/custom\/bin\/node"\nargs = \["\/opt\/Savvy\/resources\/mcp\/savvy-mcp\.mjs"\]/
+    );
+    assert.doesNotMatch(codexToml, /old-node/);
+    assert.match(codexToml, /\[mcp_servers\.other\]\ncommand = "uvx"/);
+
+    // 3. Gemini: поддерживает кастомный путь с ~/ и кастомный бинарник для мультиаккаунтов
+    const geminiCustomResult = installAgentMcpConfigFile(
+      {
+        target: 'gemini',
+        binaryPath: '/opt/cli-proxy/node',
+        configPath: '~/.gemini-work/settings.json'
+      },
+      mcpScriptPath,
+      { homeDir: tempHome }
+    );
+    const customGeminiPath = join(tempHome, '.gemini-work', 'settings.json');
+    assert.deepEqual(geminiCustomResult.configPaths, [customGeminiPath]);
+    const geminiJson = JSON.parse(await readFile(customGeminiPath, 'utf8'));
+    assert.deepEqual(geminiJson.mcpServers.savvy, {
+      command: '/opt/cli-proxy/node',
+      args: [mcpScriptPath]
+    });
+
+    // 4. Ошибка при битом JSON
+    const brokenJsonPath = join(tempHome, 'broken.json');
+    await writeFile(brokenJsonPath, '{invalid-json', 'utf8');
+    assert.throws(
+      () =>
+        installAgentMcpConfigFile({ target: 'claude', configPath: brokenJsonPath }, mcpScriptPath, {
+          homeDir: tempHome
+        }),
+      /Не удалось прочитать/
+    );
+  } finally {
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('Electron и MCP-мост поддерживают фоновый автозапуск (--headless)', async () => {
+  const mainIndex = await readFile(new URL('../src/main/index.ts', import.meta.url), 'utf8');
+  const electronApp = await readFile(
+    new URL('../src/main/electron-application.ts', import.meta.url),
+    'utf8'
+  );
+  const mcpBridge = await readFile(
+    new URL('../resources/mcp/savvy-mcp.mjs', import.meta.url),
+    'utf8'
+  );
+  const agentApiService = await readFile(
+    new URL('../src/main/services/agent-api.service.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(mainIndex, /requestSingleInstanceLock/);
+  assert.match(mainIndex, /--headless/);
+  assert.match(electronApp, /process\.argv\.includes\('--headless'\)/);
+  assert.match(electronApp, /agentApiHeadless/);
+  assert.match(electronApp, /enterHeadlessMode/);
+  assert.match(electronApp, /agent-api:enter-headless/);
+  assert.match(electronApp, /showOrCreateWindow/);
+  assert.match(agentApiService, /isPackaged:\s*app\.isPackaged/);
+  assert.match(mcpBridge, /--headless/);
+  assert.match(mcpBridge, /delete env\.ELECTRON_RUN_AS_NODE/);
 });

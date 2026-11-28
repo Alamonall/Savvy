@@ -67,20 +67,55 @@ export class ElectronApplication {
 
     this.registerIpcHandlers();
     this.setDockIcon();
-    this.createWindow();
+    const isHeadless =
+      process.argv.includes('--headless') || this.services.settings.get().agentApiHeadless;
+    if (isHeadless) {
+      if (process.platform === 'darwin') {
+        app.dock?.hide();
+      }
+    } else {
+      this.createWindow();
+    }
     void this.services.agentApi.initialize();
     this.services.applicationUpdater.initialize();
     app.on('activate', this.handleActivate);
   }
 
+  /** Показывает или создаёт главное окно при повторном запуске или клике по иконке. */
+  showOrCreateWindow(): void {
+    if (process.platform === 'darwin') {
+      void app.dock?.show();
+    }
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      if (this.mainWindow.isMinimized()) {
+        this.mainWindow.restore();
+      }
+      this.mainWindow.show();
+      this.mainWindow.focus();
+      return;
+    }
+    this.createWindow();
+  }
+
+  /** Переводит запущенное приложение в фоновый режим (без окна), сохраняя локальный сервер. */
+  enterHeadlessMode(): void {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.close();
+    }
+    if (process.platform === 'darwin') {
+      app.dock?.hide();
+    }
+  }
+
   private readonly handleActivate = (): void => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      this.createWindow();
+      this.showOrCreateWindow();
     }
   };
 
   private readonly handleWindowAllClosed = (): void => {
-    if (process.platform !== 'darwin') {
+    const keepRunningInBackground = Boolean(this.services?.settings.get().agentApiHeadless);
+    if (process.platform !== 'darwin' && !keepRunningInBackground) {
       app.quit();
     }
   };
@@ -209,6 +244,8 @@ export class ElectronApplication {
     });
     ipcMain.handle('agent-api:get-status', () => agentApi.getStatus());
     ipcMain.handle('agent-api:regenerate-token', () => agentApi.regenerateToken());
+    ipcMain.handle('agent-api:install-mcp', (_, options) => agentApi.installMcpConfig(options));
+    ipcMain.handle('agent-api:enter-headless', () => this.enterHeadlessMode());
     ipcMain.handle('settings:list-folder-directories', (_, currentPath: string) =>
       shell.listFolderDirectories(currentPath)
     );

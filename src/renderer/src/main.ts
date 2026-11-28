@@ -205,7 +205,13 @@ let settings: AppSettings = {
   rateLimit: '',
   cookiesFromBrowser: '',
   additionalOptions: '',
-  agentApiEnabled: true
+  agentApiEnabled: true,
+  agentApiHeadless: false,
+  agentMcpConfigs: {
+    claude: { binaryPath: '', configPath: '' },
+    codex: { binaryPath: '', configPath: '' },
+    gemini: { binaryPath: '', configPath: '' }
+  }
 };
 
 const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
@@ -1113,6 +1119,12 @@ function installBrowserPreviewApi(): void {
     async regenerateAgentApiToken() {
       throw new Error('Управление токеном доступно только в Electron.');
     },
+    async installAgentMcpConfig() {
+      throw new Error('Добавление MCP в конфиги доступно только в Electron.');
+    },
+    async enterHeadlessMode() {
+      throw new Error('Фоновый режим доступен только в Electron.');
+    },
     onQueueUpdate(callback) {
       listeners.add(callback);
       return () => {
@@ -1958,39 +1970,6 @@ function renderYtdlpCandidates(): string {
   `;
 }
 
-/** Копирует текст в буфер обмена и показывает уведомление в настройках. */
-async function copyToClipboard(text: string, successMessage: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    settingsMessage = successMessage;
-  } catch {
-    settingsMessage = 'Не удалось скопировать текст в буфер обмена.';
-  }
-  render();
-}
-
-/** Формирует TOML-конфигурацию MCP-сервера Savvy для Codex (~/.codex/config.toml). */
-function buildCodexMcpConfig(mcpScriptPath: string): string {
-  const escapedPath = mcpScriptPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return `[mcp_servers.savvy]\ncommand = "node"\nargs = ["${escapedPath}"]`;
-}
-
-/** Формирует JSON-конфигурацию MCP-сервера Savvy для Gemini (~/.gemini/settings.json). */
-function buildGeminiMcpConfig(mcpScriptPath: string): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        savvy: {
-          command: 'node',
-          args: [mcpScriptPath]
-        }
-      }
-    },
-    null,
-    2
-  );
-}
-
 function getMcpScriptPath(): string {
   return agentApiStatus?.mcpScriptPath ?? 'resources/mcp/savvy-mcp.mjs';
 }
@@ -2013,27 +1992,86 @@ function renderAgentApiStatusBox(): string {
   `;
 }
 
-/** Секция настроек: локальный HTTP/MCP-сервер для Codex, Gemini и других ИИ-агентов. */
+const AGENT_MCP_TARGETS: Array<{
+  target: 'claude' | 'codex' | 'gemini';
+  label: string;
+  buttonId: string;
+  defaultConfigPath: string;
+}> = [
+  {
+    target: 'claude',
+    label: 'Claude',
+    buttonId: 'install-claude-mcp-config',
+    defaultConfigPath: '~/.claude.json'
+  },
+  {
+    target: 'codex',
+    label: 'Codex',
+    buttonId: 'install-codex-mcp-config',
+    defaultConfigPath: '~/.codex/config.toml'
+  },
+  {
+    target: 'gemini',
+    label: 'Gemini',
+    buttonId: 'install-gemini-mcp-config',
+    defaultConfigPath: '~/.gemini/settings.json'
+  }
+];
+
+function renderAgentMcpTargetRow(item: (typeof AGENT_MCP_TARGETS)[number]): string {
+  const targetConfig = settings.agentMcpConfigs?.[item.target] ?? {
+    binaryPath: '',
+    configPath: ''
+  };
+
+  return `
+    <div class="inherited-box">
+      <div class="section-head">
+        <strong>${item.label}</strong>
+        <button class="ghost bordered" id="${item.buttonId}" type="button">Добавить в ${item.label}</button>
+      </div>
+      <div class="settings-grid">
+        <div class="field">
+          <label for="mcp-binary-path-${item.target}">Бинарник Node / CLI</label>
+          <input id="mcp-binary-path-${item.target}" type="text" value="${escapeHtml(targetConfig.binaryPath)}" placeholder="node" />
+        </div>
+        <div class="field">
+          <label for="mcp-config-path-${item.target}">Путь к конфигу</label>
+          <input id="mcp-config-path-${item.target}" type="text" value="${escapeHtml(targetConfig.configPath)}" placeholder="${item.defaultConfigPath}" />
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/** Секция настроек: локальный HTTP/MCP-сервер для Claude, Codex, Gemini и других ИИ-агентов. */
 function renderAgentApiSettingsSection(): string {
   return `
     <section class="panel settings-panel settings-list-panel">
       <div class="section-head">
         <h2>API для ИИ-агентов (MCP)</h2>
-        <span>Codex, Gemini</span>
+        <span>Claude, Codex, Gemini</span>
       </div>
       <label class="settings-option">
         <input data-setting-checkbox="agentApiEnabled" type="checkbox" ${settings.agentApiEnabled ? 'checked' : ''} />
         <span class="settings-option-copy">
           <span class="settings-option-title">Локальный сервер для ИИ-агентов</span>
-          <span class="settings-option-description">Позволяет Codex, Gemini и локальным скриптам запускать скачивание и отслеживать очередь через Savvy.</span>
+          <span class="settings-option-description">Позволяет Claude, Codex, Gemini и локальным скриптам запускать скачивание и отслеживать очередь через Savvy.</span>
+        </span>
+      </label>
+      <label class="settings-option">
+        <input data-setting-checkbox="agentApiHeadless" type="checkbox" ${settings.agentApiHeadless ? 'checked' : ''} />
+        <span class="settings-option-copy">
+          <span class="settings-option-title">Фоновый режим (headless)</span>
+          <span class="settings-option-description">Запускать Savvy без окна и не завершать работу при его закрытии, чтобы локальный API и MCP оставались доступны.</span>
         </span>
       </label>
       <div class="inherited-box" id="agent-api-status-box">
         ${renderAgentApiStatusBox()}
       </div>
+      ${AGENT_MCP_TARGETS.map((item) => renderAgentMcpTargetRow(item)).join('')}
       <div class="modal-actions">
-        <button class="ghost bordered" id="copy-codex-mcp-config" type="button">Скопировать конфиг Codex</button>
-        <button class="ghost bordered" id="copy-gemini-mcp-config" type="button">Скопировать конфиг Gemini</button>
+        <button class="ghost bordered" id="enter-headless-mode" type="button">Свернуть в фон (headless)</button>
         <button class="ghost bordered" id="regenerate-agent-api-token" type="button">Обновить токен</button>
       </div>
     </section>
@@ -3223,22 +3261,60 @@ function bindSettingsEvents(): void {
     void clearHistory();
   });
 
-  document
-    .querySelector<HTMLButtonElement>('#copy-codex-mcp-config')
-    ?.addEventListener('click', () => {
-      void copyToClipboard(
-        buildCodexMcpConfig(getMcpScriptPath()),
-        'Конфиг MCP для Codex скопирован (~/.codex/config.toml).'
-      );
+  for (const { buttonId, target, label } of AGENT_MCP_TARGETS) {
+    const binaryInput = document.querySelector<HTMLInputElement>(`#mcp-binary-path-${target}`);
+    const configInput = document.querySelector<HTMLInputElement>(`#mcp-config-path-${target}`);
+
+    const syncAgentMcpDraft = (): { binaryPath: string; configPath: string } => {
+      const nextTargetConfig = {
+        binaryPath: binaryInput?.value ?? '',
+        configPath: configInput?.value ?? ''
+      };
+      settings = {
+        ...settings,
+        agentMcpConfigs: {
+          ...settings.agentMcpConfigs,
+          [target]: nextTargetConfig
+        }
+      };
+      return nextTargetConfig;
+    };
+
+    const persistAgentMcpConfig = (): void => {
+      syncAgentMcpDraft();
+      void updateLocalSettings({ agentMcpConfigs: settings.agentMcpConfigs });
+    };
+
+    binaryInput?.addEventListener('input', syncAgentMcpDraft);
+    configInput?.addEventListener('input', syncAgentMcpDraft);
+    binaryInput?.addEventListener('change', persistAgentMcpConfig);
+    configInput?.addEventListener('change', persistAgentMcpConfig);
+
+    document.querySelector<HTMLButtonElement>(`#${buttonId}`)?.addEventListener('click', () => {
+      const { binaryPath, configPath } = syncAgentMcpDraft();
+      void updateLocalSettings({ agentMcpConfigs: settings.agentMcpConfigs });
+      void window.ytdlp
+        .installAgentMcpConfig({
+          target,
+          binaryPath: binaryPath.trim() || undefined,
+          configPath: configPath.trim() || undefined
+        })
+        .then((result) => {
+          settingsMessage = `MCP-сервер Savvy добавлен в ${label}: ${result.configPaths.join(', ')}`;
+          render();
+        })
+        .catch((error) => {
+          settingsMessage =
+            error instanceof Error ? error.message : `Не удалось добавить MCP в ${label}.`;
+          render();
+        });
     });
+  }
 
   document
-    .querySelector<HTMLButtonElement>('#copy-gemini-mcp-config')
+    .querySelector<HTMLButtonElement>('#enter-headless-mode')
     ?.addEventListener('click', () => {
-      void copyToClipboard(
-        buildGeminiMcpConfig(getMcpScriptPath()),
-        'Конфиг MCP для Gemini скопирован (~/.gemini/settings.json).'
-      );
+      void window.ytdlp.enterHeadlessMode();
     });
 
   document

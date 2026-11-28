@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import type { AppSettings } from '../../shared/types';
+import type { AgentMcpConfigs, AppSettings } from '../../shared/types';
 import { DEFAULT_YTDLP_CONFIG } from '../default-ytdlp-config';
 import { BinaryLocatorService } from './binary-locator.service';
 
@@ -35,6 +35,10 @@ export class SettingsService {
       ? {
           ...defaultSettings,
           ...persistedSettings,
+          agentMcpConfigs: this.normalizeAgentMcpConfigs(
+            persistedSettings.agentMcpConfigs,
+            defaultSettings.agentMcpConfigs
+          ),
           inlineConfigText: configText
         }
       : defaultSettings;
@@ -60,7 +64,12 @@ export class SettingsService {
       maxConcurrentDownloads: Number.isFinite(maxConcurrentDownloads)
         ? Math.max(1, Math.min(8, Math.floor(maxConcurrentDownloads)))
         : currentSettings.maxConcurrentDownloads,
-      agentApiEnabled: Boolean(nextSettings.agentApiEnabled ?? currentSettings.agentApiEnabled)
+      agentApiEnabled: Boolean(nextSettings.agentApiEnabled ?? currentSettings.agentApiEnabled),
+      agentApiHeadless: Boolean(nextSettings.agentApiHeadless ?? currentSettings.agentApiHeadless),
+      agentMcpConfigs: this.normalizeAgentMcpConfigs(
+        nextSettings.agentMcpConfigs,
+        currentSettings.agentMcpConfigs
+      )
     };
 
     if (normalizedSettings.forceOverwrites && normalizedSettings.noOverwrites) {
@@ -236,7 +245,33 @@ export class SettingsService {
       rateLimit: '',
       cookiesFromBrowser: '',
       additionalOptions: '',
-      agentApiEnabled: true
+      agentApiEnabled: true,
+      agentApiHeadless: false,
+      agentMcpConfigs: {
+        claude: { binaryPath: '', configPath: '' },
+        codex: { binaryPath: '', configPath: '' },
+        gemini: { binaryPath: '', configPath: '' }
+      }
+    };
+  }
+
+  private normalizeAgentMcpConfigs(
+    nextConfigs: Partial<AgentMcpConfigs> | undefined,
+    fallback: AgentMcpConfigs
+  ): AgentMcpConfigs {
+    return {
+      claude: {
+        binaryPath: (nextConfigs?.claude?.binaryPath ?? fallback.claude.binaryPath).trim(),
+        configPath: (nextConfigs?.claude?.configPath ?? fallback.claude.configPath).trim()
+      },
+      codex: {
+        binaryPath: (nextConfigs?.codex?.binaryPath ?? fallback.codex.binaryPath).trim(),
+        configPath: (nextConfigs?.codex?.configPath ?? fallback.codex.configPath).trim()
+      },
+      gemini: {
+        binaryPath: (nextConfigs?.gemini?.binaryPath ?? fallback.gemini.binaryPath).trim(),
+        configPath: (nextConfigs?.gemini?.configPath ?? fallback.gemini.configPath).trim()
+      }
     };
   }
 

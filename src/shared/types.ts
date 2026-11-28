@@ -90,6 +90,28 @@ export interface AppSettings {
   cookiesFromBrowser: string;
   additionalOptions: string;
   agentApiEnabled: boolean;
+  agentApiHeadless: boolean;
+  agentMcpConfigs: AgentMcpConfigs;
+}
+
+export type AgentMcpTarget = 'claude' | 'codex' | 'gemini';
+
+export interface AgentMcpTargetConfig {
+  binaryPath: string;
+  configPath: string;
+}
+
+export type AgentMcpConfigs = Record<AgentMcpTarget, AgentMcpTargetConfig>;
+
+export interface InstallAgentMcpOptions {
+  target: AgentMcpTarget;
+  binaryPath?: string;
+  configPath?: string;
+}
+
+export interface InstallAgentMcpResult {
+  target: AgentMcpTarget;
+  configPaths: string[];
 }
 
 export interface AgentApiStatus {
@@ -187,6 +209,8 @@ export interface YtdlpApi {
   ): Promise<void>;
   getAgentApiStatus(): Promise<AgentApiStatus>;
   regenerateAgentApiToken(): Promise<AgentApiStatus>;
+  installAgentMcpConfig(options: InstallAgentMcpOptions): Promise<InstallAgentMcpResult>;
+  enterHeadlessMode(): Promise<void>;
   onQueueUpdate(callback: (update: DownloadUpdate) => void): () => void;
   onApplicationUpdate(callback: (update: ApplicationUpdateState) => void): () => void;
 }

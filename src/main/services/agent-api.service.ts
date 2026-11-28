@@ -2,9 +2,15 @@ import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { AgentApiStatus } from '../../shared/types';
+import type {
+  AgentApiStatus,
+  InstallAgentMcpOptions,
+  InstallAgentMcpResult
+} from '../../shared/types';
 import { AgentHttpServer } from '../agent-http-server';
+import { installAgentMcpConfigFile } from '../agent-mcp-config';
 import { DownloadsService } from './downloads.service';
 import { SettingsService } from './settings.service';
 
@@ -78,6 +84,11 @@ export class AgentApiService implements OnModuleDestroy {
       this.writeDiscoveryFile(this.httpServer.getPort() as number);
     }
     return this.getStatus();
+  }
+
+  /** Добавляет или обновляет MCP-сервер Savvy в локальной конфигурации Claude, Codex или Gemini. */
+  installMcpConfig(options: InstallAgentMcpOptions, homeDir = homedir()): InstallAgentMcpResult {
+    return installAgentMcpConfigFile(options, this.getMcpScriptPath(), { homeDir });
   }
 
   /** Возвращает текущее состояние локального API и пути для подключения ИИ-агентов. */
@@ -208,6 +219,7 @@ export class AgentApiService implements OnModuleDestroy {
       baseUrl,
       mcpHttpUrl: baseUrl ? `${baseUrl}/mcp` : null,
       token: running ? this.token : '',
+      isPackaged: app.isPackaged,
       executablePath: process.execPath,
       appPath: app.getAppPath(),
       updatedAt: Date.now()
