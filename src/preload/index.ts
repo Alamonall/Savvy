@@ -5,6 +5,7 @@ import type {
   ApplicationUpdateState,
   AppSettings,
   DownloadUpdate,
+  InstallAgentMcpOptions,
   YtdlpApi,
   YtdlpReleaseChannel,
   YtdlpUpdateProgress
@@ -98,6 +99,18 @@ const api: YtdlpApi = {
       confirmedActiveDownloadCount,
       confirmedQueuedDownloadCount
     );
+  },
+  getAgentApiStatus() {
+    return ipcRenderer.invoke('agent-api:get-status');
+  },
+  regenerateAgentApiToken() {
+    return ipcRenderer.invoke('agent-api:regenerate-token');
+  },
+  installAgentMcpConfig(options: InstallAgentMcpOptions) {
+    return ipcRenderer.invoke('agent-api:install-mcp', options);
+  },
+  enterHeadlessMode() {
+    return ipcRenderer.invoke('agent-api:enter-headless');
   },
   onQueueUpdate(callback: (update: DownloadUpdate) => void) {
     const listener = (_event: IpcRendererEvent, update: DownloadUpdate): void => {

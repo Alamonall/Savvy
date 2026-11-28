@@ -89,6 +89,41 @@ export interface AppSettings {
   rateLimit: string;
   cookiesFromBrowser: string;
   additionalOptions: string;
+  agentApiEnabled: boolean;
+  agentApiHeadless: boolean;
+  agentMcpConfigs: AgentMcpConfigs;
+}
+
+export type AgentMcpTarget = 'claude' | 'codex' | 'gemini';
+
+export interface AgentMcpTargetConfig {
+  binaryPath: string;
+  configPath: string;
+}
+
+export type AgentMcpConfigs = Record<AgentMcpTarget, AgentMcpTargetConfig>;
+
+export interface InstallAgentMcpOptions {
+  target: AgentMcpTarget;
+  binaryPath?: string;
+  configPath?: string;
+}
+
+export interface InstallAgentMcpResult {
+  target: AgentMcpTarget;
+  configPaths: string[];
+}
+
+export interface AgentApiStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number | null;
+  baseUrl: string | null;
+  mcpHttpUrl: string | null;
+  mcpScriptPath: string;
+  discoveryFilePath: string;
+  token: string;
+  errorMessage: string | null;
 }
 
 export interface YtdlpBinaryInfo {
@@ -180,6 +215,10 @@ export interface YtdlpApi {
     confirmedActiveDownloadCount: number,
     confirmedQueuedDownloadCount: number
   ): Promise<void>;
+  getAgentApiStatus(): Promise<AgentApiStatus>;
+  regenerateAgentApiToken(): Promise<AgentApiStatus>;
+  installAgentMcpConfig(options: InstallAgentMcpOptions): Promise<InstallAgentMcpResult>;
+  enterHeadlessMode(): Promise<void>;
   onQueueUpdate(callback: (update: DownloadUpdate) => void): () => void;
   onApplicationUpdate(callback: (update: ApplicationUpdateState) => void): () => void;
   onYtdlpUpdateProgress(callback: (progress: YtdlpUpdateProgress) => void): () => void;

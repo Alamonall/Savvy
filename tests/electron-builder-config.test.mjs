@@ -34,5 +34,8 @@ test('packaged application includes the downloaded yt-dlp binary', () => {
   assert.match(packageJson.scripts['dist:windows'], /npm run prepare:ytdlp/);
   assert.match(packageJson.scripts.publish, /npm run prepare:ytdlp/);
   assert.match(packageJson.scripts['publish:mac'], /npm run prepare:ytdlp/);
-  assert.deepEqual(packageJson.build.extraResources, [{ from: 'build/ytdlp', to: 'bin' }]);
+  assert.deepEqual(packageJson.build.extraResources, [
+    { from: 'build/ytdlp', to: 'bin' },
+    { from: 'resources/mcp', to: 'mcp' }
+  ]);
 });

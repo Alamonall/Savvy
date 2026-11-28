@@ -1,4 +1,5 @@
 import type {
+  AgentApiStatus,
   ApplicationUpdateState,
   AppSettings,
   DownloadUpdate,
@@ -145,6 +146,7 @@ let isApplicationUpdateCheckInProgress = false;
 let applicationUpdateCheckError: string | null = null;
 let isApplicationUpdateUpToDate = false;
 let isApplicationUpdateChangesOpen = false;
+let agentApiStatus: AgentApiStatus | null = null;
 let settings: AppSettings = {
   ytdlpPath: '',
   ytdlpReleaseChannel: 'stable',
@@ -209,7 +211,14 @@ let settings: AppSettings = {
   sponsorBlockMark: '',
   rateLimit: '',
   cookiesFromBrowser: '',
-  additionalOptions: ''
+  additionalOptions: '',
+  agentApiEnabled: true,
+  agentApiHeadless: false,
+  agentMcpConfigs: {
+    claude: { binaryPath: '', configPath: '' },
+    codex: { binaryPath: '', configPath: '' },
+    gemini: { binaryPath: '', configPath: '' }
+  }
 };
 
 const SETTINGS_OPTION_GROUPS: SettingsOptionGroup[] = [
@@ -1101,6 +1110,28 @@ function installBrowserPreviewApi(): void {
     async installApplicationUpdate() {
       throw new Error('Обновление приложения доступно только в Electron.');
     },
+    async getAgentApiStatus() {
+      return {
+        enabled: true,
+        running: false,
+        port: null,
+        baseUrl: null,
+        mcpHttpUrl: null,
+        mcpScriptPath: 'resources/mcp/savvy-mcp.mjs',
+        discoveryFilePath: 'agent-api.json',
+        token: 'preview-token',
+        errorMessage: null
+      };
+    },
+    async regenerateAgentApiToken() {
+      throw new Error('Управление токеном доступно только в Electron.');
+    },
+    async installAgentMcpConfig() {
+      throw new Error('Добавление MCP в конфиги доступно только в Electron.');
+    },
+    async enterHeadlessMode() {
+      throw new Error('Фоновый режим доступен только в Electron.');
+    },
     onQueueUpdate(callback) {
       listeners.add(callback);
       return () => {
@@ -1848,6 +1879,15 @@ function renderSettingsUiPanel(): string {
     'скачать',
     'установить и перезапустить'
   ]);
+  const showAgentApiSection = isSettingsUtilitySectionMatching(query, [
+    'API для ИИ-агентов',
+    'mcp',
+    'codex',
+    'gemini',
+    'http',
+    'токен',
+    'ии-агенты'
+  ]);
   const showClearHistoryButton = isSettingsUtilitySectionMatching(query, [
     'Очистить историю',
     'история'
@@ -1895,6 +1935,7 @@ function renderSettingsUiPanel(): string {
   const hasAnyMatches =
     Boolean(renderedGroups) ||
     showYtdlpBinarySection ||
+    showAgentApiSection ||
     showApplicationUpdateSection ||
     showClearHistoryButton;
 
@@ -1909,6 +1950,7 @@ function renderSettingsUiPanel(): string {
       </datalist>
       ${renderedGroups}
       ${ytdlpBinarySectionMarkup}
+      <div ${showAgentApiSection ? '' : 'hidden'}>${renderAgentApiSettingsSection()}</div>
       <div ${showApplicationUpdateSection ? '' : 'hidden'}>${renderApplicationUpdateSettingsSection()}</div>
       ${clearHistoryMarkup}
       ${hasAnyMatches ? '' : '<p class="settings-search-empty">Ничего не найдено.</p>'}
@@ -1935,6 +1977,114 @@ function renderYtdlpCandidates(): string {
         )
         .join('')}
     </ul>
+  `;
+}
+
+function getMcpScriptPath(): string {
+  return agentApiStatus?.mcpScriptPath ?? 'resources/mcp/savvy-mcp.mjs';
+}
+
+function renderAgentApiStatusBox(): string {
+  const status = agentApiStatus;
+  const mcpScriptPath = getMcpScriptPath();
+  const statusText = !settings.agentApiEnabled
+    ? 'Отключён'
+    : status?.running && status.baseUrl
+      ? `Запущен на ${status.baseUrl}`
+      : status?.errorMessage
+        ? `Ошибка: ${status.errorMessage}`
+        : 'Запускается…';
+
+  return `
+    <p>Состояние: ${escapeHtml(statusText)}</p>
+    ${status?.mcpHttpUrl ? `<p>MCP HTTP: ${escapeHtml(status.mcpHttpUrl)}</p>` : ''}
+    <p>MCP-мост (stdio): ${escapeHtml(mcpScriptPath)}</p>
+  `;
+}
+
+const AGENT_MCP_TARGETS: Array<{
+  target: 'claude' | 'codex' | 'gemini';
+  label: string;
+  buttonId: string;
+  defaultConfigPath: string;
+}> = [
+  {
+    target: 'claude',
+    label: 'Claude',
+    buttonId: 'install-claude-mcp-config',
+    defaultConfigPath: '~/.claude.json'
+  },
+  {
+    target: 'codex',
+    label: 'Codex',
+    buttonId: 'install-codex-mcp-config',
+    defaultConfigPath: '~/.codex/config.toml'
+  },
+  {
+    target: 'gemini',
+    label: 'Gemini',
+    buttonId: 'install-gemini-mcp-config',
+    defaultConfigPath: '~/.gemini/settings.json'
+  }
+];
+
+function renderAgentMcpTargetRow(item: (typeof AGENT_MCP_TARGETS)[number]): string {
+  const targetConfig = settings.agentMcpConfigs?.[item.target] ?? {
+    binaryPath: '',
+    configPath: ''
+  };
+
+  return `
+    <div class="inherited-box">
+      <div class="section-head">
+        <strong>${item.label}</strong>
+        <button class="ghost bordered" id="${item.buttonId}" type="button">Добавить в ${item.label}</button>
+      </div>
+      <div class="settings-grid">
+        <div class="field">
+          <label for="mcp-binary-path-${item.target}">Бинарник Node / CLI</label>
+          <input id="mcp-binary-path-${item.target}" type="text" value="${escapeHtml(targetConfig.binaryPath)}" placeholder="node" />
+        </div>
+        <div class="field">
+          <label for="mcp-config-path-${item.target}">Путь к конфигу</label>
+          <input id="mcp-config-path-${item.target}" type="text" value="${escapeHtml(targetConfig.configPath)}" placeholder="${item.defaultConfigPath}" />
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/** Секция настроек: локальный HTTP/MCP-сервер для Claude, Codex, Gemini и других ИИ-агентов. */
+function renderAgentApiSettingsSection(): string {
+  return `
+    <section class="panel settings-panel settings-list-panel">
+      <div class="section-head">
+        <h2>API для ИИ-агентов (MCP)</h2>
+        <span>Claude, Codex, Gemini</span>
+      </div>
+      <label class="settings-option">
+        <input data-setting-checkbox="agentApiEnabled" type="checkbox" ${settings.agentApiEnabled ? 'checked' : ''} />
+        <span class="settings-option-copy">
+          <span class="settings-option-title">Локальный сервер для ИИ-агентов</span>
+          <span class="settings-option-description">Позволяет Claude, Codex, Gemini и локальным скриптам запускать скачивание и отслеживать очередь через Savvy.</span>
+        </span>
+      </label>
+      <label class="settings-option">
+        <input data-setting-checkbox="agentApiHeadless" type="checkbox" ${settings.agentApiHeadless ? 'checked' : ''} />
+        <span class="settings-option-copy">
+          <span class="settings-option-title">Фоновый режим (headless)</span>
+          <span class="settings-option-description">Запускать Savvy без окна и не завершать работу при его закрытии, чтобы локальный API и MCP оставались доступны.</span>
+        </span>
+      </label>
+      <div class="inherited-box" id="agent-api-status-box">
+        ${renderAgentApiStatusBox()}
+      </div>
+      ${AGENT_MCP_TARGETS.map((item) => renderAgentMcpTargetRow(item)).join('')}
+      <div class="modal-actions">
+        <button class="ghost bordered" id="enter-headless-mode" type="button">Свернуть в фон (headless)</button>
+        <button class="ghost bordered" id="regenerate-agent-api-token" type="button">Обновить токен</button>
+      </div>
+    </section>
   `;
 }
 
@@ -2101,9 +2251,10 @@ async function updateLocalSettings(partialSettings: Partial<AppSettings>): Promi
   };
 
   settings = await window.ytdlp.updateSettings(nextSettings);
-  [effectiveOptionsPreview, effectiveConfigText] = await Promise.all([
+  [effectiveOptionsPreview, effectiveConfigText, agentApiStatus] = await Promise.all([
     window.ytdlp.getEffectiveOptionsPreview(),
-    window.ytdlp.getEffectiveConfigText()
+    window.ytdlp.getEffectiveConfigText(),
+    window.ytdlp.getAgentApiStatus()
   ]);
   refreshSettingsPanelView();
 }
@@ -2117,6 +2268,11 @@ function refreshSettingsPanelView(): void {
 
   if (optionsPreview) {
     optionsPreview.textContent = effectiveOptionsPreview || 'Без дополнительных аргументов';
+  }
+
+  const agentApiStatusBox = document.querySelector<HTMLElement>('#agent-api-status-box');
+  if (agentApiStatusBox) {
+    agentApiStatusBox.innerHTML = renderAgentApiStatusBox();
   }
 
   if (settingsMode === 'text' && textConfigDraft === null) {
@@ -3195,6 +3351,72 @@ function bindSettingsEvents(): void {
   document.querySelector<HTMLButtonElement>('#clear-history')?.addEventListener('click', () => {
     void clearHistory();
   });
+
+  for (const { buttonId, target, label } of AGENT_MCP_TARGETS) {
+    const binaryInput = document.querySelector<HTMLInputElement>(`#mcp-binary-path-${target}`);
+    const configInput = document.querySelector<HTMLInputElement>(`#mcp-config-path-${target}`);
+
+    const syncAgentMcpDraft = (): { binaryPath: string; configPath: string } => {
+      const nextTargetConfig = {
+        binaryPath: binaryInput?.value ?? '',
+        configPath: configInput?.value ?? ''
+      };
+      settings = {
+        ...settings,
+        agentMcpConfigs: {
+          ...settings.agentMcpConfigs,
+          [target]: nextTargetConfig
+        }
+      };
+      return nextTargetConfig;
+    };
+
+    const persistAgentMcpConfig = (): void => {
+      syncAgentMcpDraft();
+      void updateLocalSettings({ agentMcpConfigs: settings.agentMcpConfigs });
+    };
+
+    binaryInput?.addEventListener('input', syncAgentMcpDraft);
+    configInput?.addEventListener('input', syncAgentMcpDraft);
+    binaryInput?.addEventListener('change', persistAgentMcpConfig);
+    configInput?.addEventListener('change', persistAgentMcpConfig);
+
+    document.querySelector<HTMLButtonElement>(`#${buttonId}`)?.addEventListener('click', () => {
+      const { binaryPath, configPath } = syncAgentMcpDraft();
+      void updateLocalSettings({ agentMcpConfigs: settings.agentMcpConfigs });
+      void window.ytdlp
+        .installAgentMcpConfig({
+          target,
+          binaryPath: binaryPath.trim() || undefined,
+          configPath: configPath.trim() || undefined
+        })
+        .then((result) => {
+          settingsMessage = `MCP-сервер Savvy добавлен в ${label}: ${result.configPaths.join(', ')}`;
+          render();
+        })
+        .catch((error) => {
+          settingsMessage =
+            error instanceof Error ? error.message : `Не удалось добавить MCP в ${label}.`;
+          render();
+        });
+    });
+  }
+
+  document
+    .querySelector<HTMLButtonElement>('#enter-headless-mode')
+    ?.addEventListener('click', () => {
+      void window.ytdlp.enterHeadlessMode();
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('#regenerate-agent-api-token')
+    ?.addEventListener('click', () => {
+      void window.ytdlp.regenerateAgentApiToken().then((nextStatus) => {
+        agentApiStatus = nextStatus;
+        settingsMessage = 'Токен локального API обновлён.';
+        render();
+      });
+    });
 
   document
     .querySelector<HTMLButtonElement>('#find-ytdlp-binaries')
@@ -4438,6 +4660,7 @@ async function initializeApp(): Promise<void> {
     await refreshYtdlpBinaryInfo();
     queue = await window.ytdlp.getQueue();
     applicationUpdate = await window.ytdlp.getApplicationUpdate();
+    agentApiStatus = await window.ytdlp.getAgentApiStatus();
   } catch (error) {
     startupError =
       error instanceof Error ? error.message : 'Не удалось получить очередь скачивания.';
